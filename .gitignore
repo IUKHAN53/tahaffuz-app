@@ -39,3 +39,6 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Brand pipeline: font is fetched at build time by scripts/gen-icons.mjs
+scripts/.fonts/
