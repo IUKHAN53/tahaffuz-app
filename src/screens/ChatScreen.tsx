@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import {
-  Chip,
+  Icon,
   IconButton,
   Menu,
   Snackbar,
@@ -21,6 +21,7 @@ import {
 } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Speech from 'expo-speech';
+import * as Clipboard from 'expo-clipboard';
 import {
   AudioModule,
   RecordingPresets,
@@ -30,7 +31,7 @@ import {
 } from 'expo-audio';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
-import { getChat, sendAudio, sendText, type Citation, type ReplyLanguage } from '../api';
+import { getChat, sendAudio, sendText, sendTextStream, type ReplyLanguage } from '../api';
 import { getDeviceId } from '../deviceId';
 import { upsertSession } from '../sessions';
 import { brand, palette } from '../theme';
@@ -44,7 +45,6 @@ type Msg = {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-  citations?: Citation[];
   pending?: boolean;
 };
 
@@ -64,6 +64,9 @@ type Strings = {
   voiceTranscriptFallback: string;
   snackbarClose: string;
   micHint: string;
+  micHintStop: string;
+  copied: string;
+  retry: string;
 };
 
 const COPY: Record<ReplyLanguage, Strings> = {
@@ -86,7 +89,10 @@ const COPY: Record<ReplyLanguage, Strings> = {
     voicePlaceholder: 'Voice message…',
     voiceTranscriptFallback: 'Voice message',
     snackbarClose: 'Close',
-    micHint: 'Hold to speak',
+    micHint: 'Tap to record',
+    micHintStop: 'Tap to stop',
+    copied: 'Answer copied',
+    retry: 'Retry',
   },
   ur: {
     newChat: 'نیا چیٹ',
@@ -107,11 +113,42 @@ const COPY: Record<ReplyLanguage, Strings> = {
     voicePlaceholder: 'آواز کا پیغام…',
     voiceTranscriptFallback: 'آواز کا پیغام',
     snackbarClose: 'بند',
-    micHint: 'بولنے کے لیے دبائے رکھیں',
+    micHint: 'ریکارڈ کرنے کے لیے دبائیں',
+    micHintStop: 'روکنے کے لیے دبائیں',
+    copied: 'جواب کاپی ہو گیا',
+    retry: 'دوبارہ کوشش',
+  },
+  rud: {
+    newChat: 'Naya chat',
+    eyebrow: 'TARBIYATI MUAVIN',
+    greeting: 'Aaj main kaise madad karoon?',
+    greetingHint: 'Vaccination, cold chain, ya immunization session ke baare mein sawal poochein.',
+    suggestions: [
+      'Cold chain ka temperature kitna hona chahiye?',
+      'Polio vaccine kab lagai jati hai?',
+      'BCG vaccine kya rokti hai?',
+    ],
+    placeholder: 'Sawal yahan likhein…',
+    errorLoad: 'Load nakaam',
+    errorNet: 'Network ki kharabi',
+    errorMic: 'Mic nakaam',
+    errorNoAudio: 'Koi audio record nahi hui',
+    errorVoice: 'Awaaz ki darkhwast nakaam',
+    voicePlaceholder: 'Awaaz ka paigham…',
+    voiceTranscriptFallback: 'Awaaz ka paigham',
+    snackbarClose: 'Band karein',
+    micHint: 'Record karne ke liye tap karein',
+    micHintStop: 'Rokne ke liye tap karein',
+    copied: 'Jawab copy ho gaya',
+    retry: 'Dobaara koshish',
   },
 };
 
-const TTS_LANG: Record<ReplyLanguage, string> = { en: 'en-US', ur: 'ur-PK' };
+// Roman Urdu has no voice of its own — read it with the Urdu engine.
+const TTS_LANG: Record<ReplyLanguage, string> = { en: 'en-US', ur: 'ur-PK', rud: 'ur-PK' };
+
+const isPlaceholderTitleText = (t: string) =>
+  t === COPY.en.newChat || t === COPY.ur.newChat || t === COPY.rud.newChat;
 
 export default function ChatScreen({ route, navigation }: Props) {
   const theme = useTheme();
@@ -127,32 +164,34 @@ export default function ChatScreen({ route, navigation }: Props) {
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [retryText, setRetryText] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(initialChatId !== null);
   const [muted, setMuted] = useState(false);
 
   const listRef = useRef<FlatList<Msg>>(null);
+  const messagesRef = useRef<Msg[]>([]);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder);
   const recordingPulse = useRef(new Animated.Value(1)).current;
-  const recordingRing = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   useEffect(() => {
     if (recorderState.isRecording) {
       const loop = Animated.loop(
-        Animated.parallel([
-          Animated.sequence([
-            Animated.timing(recordingPulse, { toValue: 1.14, duration: 600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-            Animated.timing(recordingPulse, { toValue: 1.0, duration: 600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-          ]),
-          Animated.timing(recordingRing, { toValue: 1, duration: 1200, useNativeDriver: true }),
+        Animated.sequence([
+          Animated.timing(recordingPulse, { toValue: 1.14, duration: 600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+          Animated.timing(recordingPulse, { toValue: 1.0, duration: 600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
         ]),
       );
       loop.start();
       return () => loop.stop();
     }
     recordingPulse.setValue(1);
-    recordingRing.setValue(0);
-  }, [recorderState.isRecording, recordingPulse, recordingRing]);
+  }, [recorderState.isRecording, recordingPulse]);
 
   useEffect(() => {
     (async () => {
@@ -169,15 +208,15 @@ export default function ChatScreen({ route, navigation }: Props) {
         try {
           const detail = await getChat(id, initialChatId);
           if (detail.chat.title) setChatTitle(detail.chat.title);
-          if (detail.chat.language === 'en' || detail.chat.language === 'ur') {
-            setLanguage(detail.chat.language as ReplyLanguage);
+          const lang = detail.chat.language;
+          if (lang === 'en' || lang === 'ur' || lang === 'rud') {
+            setLanguage(lang);
           }
           setMessages(
             detail.messages.map((m) => ({
               id: `s${m.id}`,
               role: m.role === 'system' ? 'assistant' : (m.role as 'user' | 'assistant'),
               content: m.content,
-              citations: m.citations ?? undefined,
             })),
           );
         } catch (e: any) {
@@ -200,7 +239,7 @@ export default function ChatScreen({ route, navigation }: Props) {
 
   const speak = useCallback(
     (text: string) => {
-      if (muted) return;
+      if (muted || !text.trim()) return;
       Speech.stop();
       Speech.speak(text, { language: TTS_LANG[language], pitch: 1.0, rate: 0.95 });
     },
@@ -208,57 +247,94 @@ export default function ChatScreen({ route, navigation }: Props) {
   );
 
   const persistSession = useCallback(
-    (id: number, title: string, count: number) => {
+    (id: number, title: string) => {
       upsertSession({
         id,
         title: title || strings.newChat,
-        message_count: count,
+        message_count: messagesRef.current.length,
         updated_at: new Date().toISOString(),
       });
     },
     [strings.newChat],
   );
 
-  const sendTextMessage = useCallback(async () => {
-    if (!deviceId || !input.trim() || busy) return;
-    const text = input.trim();
-    setInput('');
-    setError(null);
-
-    const userMsg: Msg = { id: `u${Date.now()}`, role: 'user', content: text };
-    const placeholder: Msg = { id: `p${Date.now()}`, role: 'assistant', content: '', pending: true };
-    setMessages((m) => [...m, userMsg, placeholder]);
-    setBusy(true);
-    const isPlaceholderTitle = chatTitle === COPY.en.newChat || chatTitle === COPY.ur.newChat;
-    if (isPlaceholderTitle && !chatId) {
-      setChatTitle(text.slice(0, 60));
-    }
-    scroll();
-
+  const copyMessage = useCallback(async (text: string) => {
+    if (!text.trim()) return;
     try {
-      const res = await sendText({ deviceId, message: text, chatId, language });
-      setChatId(res.chat_id);
-      const finalMessages = await new Promise<Msg[]>((resolve) => {
-        setMessages((m) => {
-          const next = m.map((x) =>
-            x.id === placeholder.id
-              ? { ...x, pending: false, content: res.reply.content, citations: res.reply.citations }
-              : x,
-          );
-          resolve(next);
-          return next;
-        });
-      });
-      persistSession(res.chat_id, isPlaceholderTitle ? text.slice(0, 60) : chatTitle, finalMessages.length);
-      speak(res.reply.content);
-    } catch (e: any) {
-      setMessages((m) => m.filter((x) => x.id !== placeholder.id));
-      setError(e?.message ?? strings.errorNet);
-    } finally {
-      setBusy(false);
+      await Clipboard.setStringAsync(text);
+      setCopied(true);
+    } catch {}
+  }, []);
+
+  const sendTextMessage = useCallback(
+    async (retryOf?: string) => {
+      const text = (retryOf ?? input).trim();
+      if (!deviceId || !text || busy) return;
+      if (!retryOf) setInput('');
+      setError(null);
+      setRetryText(null);
+
+      const placeholderId = `p${Date.now()}`;
+      const userMsg: Msg = { id: `u${Date.now()}`, role: 'user', content: text };
+      const placeholder: Msg = { id: placeholderId, role: 'assistant', content: '', pending: true };
+      setMessages((m) => [...m, userMsg, placeholder]);
+      setBusy(true);
+
+      const freshTitle = isPlaceholderTitleText(chatTitle) && !chatId;
+      if (freshTitle) setChatTitle(text.slice(0, 60));
+      const titleForCache = freshTitle ? text.slice(0, 60) : chatTitle;
       scroll();
-    }
-  }, [busy, chatId, chatTitle, deviceId, input, language, persistSession, scroll, speak, strings.errorNet]);
+
+      const applyFinal = (content: string) =>
+        setMessages((m) => m.map((x) => (x.id === placeholderId ? { ...x, pending: false, content } : x)));
+
+      let sawDelta = false;
+      try {
+        const res = await sendTextStream(
+          { deviceId, message: text, chatId, language },
+          {
+            onMeta: (id) => setChatId(id),
+            onDelta: (delta) => {
+              sawDelta = true;
+              setMessages((m) =>
+                m.map((x) =>
+                  x.id === placeholderId ? { ...x, pending: false, content: x.content + delta } : x,
+                ),
+              );
+              scroll();
+            },
+          },
+        );
+        setChatId(res.chat_id);
+        applyFinal(res.reply.content);
+        persistSession(res.chat_id, titleForCache);
+        speak(res.reply.content);
+      } catch (streamErr: any) {
+        if (sawDelta) {
+          // A partial answer is already on screen — show a soft error, offer retry.
+          setError(streamErr?.message ?? strings.errorNet);
+          setRetryText(text);
+        } else {
+          // Streaming unavailable — fall back to the plain request/response endpoint.
+          try {
+            const res = await sendText({ deviceId, message: text, chatId, language });
+            setChatId(res.chat_id);
+            applyFinal(res.reply.content);
+            persistSession(res.chat_id, titleForCache);
+            speak(res.reply.content);
+          } catch (e: any) {
+            setMessages((m) => m.filter((x) => x.id !== placeholderId));
+            setError(e?.message ?? strings.errorNet);
+            setRetryText(text);
+          }
+        }
+      } finally {
+        setBusy(false);
+        scroll();
+      }
+    },
+    [busy, chatId, chatTitle, deviceId, input, language, persistSession, scroll, speak, strings.errorNet],
+  );
 
   const startRecording = useCallback(async () => {
     if (!deviceId || busy || recorderState.isRecording) return;
@@ -274,6 +350,8 @@ export default function ChatScreen({ route, navigation }: Props) {
   const stopRecordingAndSend = useCallback(async () => {
     if (!deviceId || !recorderState.isRecording) return;
     setBusy(true);
+    setError(null);
+    setRetryText(null);
     try {
       await recorder.stop();
       const uri = recorder.uri;
@@ -282,41 +360,46 @@ export default function ChatScreen({ route, navigation }: Props) {
         return;
       }
 
-      const userPlaceholder: Msg = { id: `uv${Date.now()}`, role: 'user', content: strings.voicePlaceholder, pending: true };
-      const placeholder: Msg = { id: `pv${Date.now()}`, role: 'assistant', content: '', pending: true };
-      setMessages((m) => [...m, userPlaceholder, placeholder]);
+      const userId = `uv${Date.now()}`;
+      const placeholderId = `pv${Date.now()}`;
+      setMessages((m) => [
+        ...m,
+        { id: userId, role: 'user', content: strings.voicePlaceholder, pending: true },
+        { id: placeholderId, role: 'assistant', content: '', pending: true },
+      ]);
       scroll();
 
       const res = await sendAudio({ deviceId, audioUri: uri, audioMime: 'audio/m4a', chatId, language });
       setChatId(res.chat_id);
-      const transcript = res.transcript ?? strings.voiceTranscriptFallback;
-      const isPlaceholderTitle = chatTitle === COPY.en.newChat || chatTitle === COPY.ur.newChat;
-      if (isPlaceholderTitle && !chatId) {
-        setChatTitle(transcript.slice(0, 60));
-      }
-      const finalMessages = await new Promise<Msg[]>((resolve) => {
-        setMessages((m) => {
-          const next = m.map((x) => {
-            if (x.id === userPlaceholder.id) return { ...x, pending: false, content: transcript };
-            if (x.id === placeholder.id) {
-              return { ...x, pending: false, content: res.reply.content, citations: res.reply.citations };
-            }
-            return x;
-          });
-          resolve(next);
-          return next;
-        });
-      });
-      persistSession(res.chat_id, isPlaceholderTitle ? transcript.slice(0, 60) : chatTitle, finalMessages.length);
+      const transcript = res.transcript?.trim() || strings.voiceTranscriptFallback;
+      const freshTitle = isPlaceholderTitleText(chatTitle) && !chatId;
+      if (freshTitle) setChatTitle(transcript.slice(0, 60));
+
+      setMessages((m) =>
+        m.map((x) => {
+          if (x.id === userId) return { ...x, pending: false, content: transcript };
+          if (x.id === placeholderId) return { ...x, pending: false, content: res.reply.content };
+          return x;
+        }),
+      );
+      persistSession(res.chat_id, freshTitle ? transcript.slice(0, 60) : chatTitle);
       speak(res.reply.content);
     } catch (e: any) {
-      setError(e?.message ?? strings.errorVoice);
       setMessages((m) => m.filter((x) => !x.pending));
+      setError(e?.message ?? strings.errorVoice);
     } finally {
       setBusy(false);
       scroll();
     }
   }, [chatId, chatTitle, deviceId, language, persistSession, recorder, recorderState.isRecording, scroll, speak, strings.errorNoAudio, strings.errorVoice, strings.voicePlaceholder, strings.voiceTranscriptFallback]);
+
+  const toggleRecording = useCallback(() => {
+    if (recorderState.isRecording) {
+      stopRecordingAndSend();
+    } else {
+      startRecording();
+    }
+  }, [recorderState.isRecording, startRecording, stopRecordingAndSend]);
 
   const renderItem = useCallback(
     ({ item }: { item: Msg }) => {
@@ -329,13 +412,13 @@ export default function ChatScreen({ route, navigation }: Props) {
               <BrandMark size={20} />
             </View>
           )}
-          <View
-            style={[
-              styles.bubble,
-              isUser ? styles.bubbleUser : styles.bubbleBot,
-            ]}
+          <Pressable
+            onLongPress={() => copyMessage(item.content)}
+            delayLongPress={320}
+            android_ripple={{ color: 'rgba(7,32,63,0.06)' }}
+            style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleBot]}
           >
-            {item.pending ? (
+            {item.pending && item.content === '' ? (
               <View style={styles.pendingRow}>
                 <TypingDots size={6} color={brand.amber} />
               </View>
@@ -351,23 +434,11 @@ export default function ChatScreen({ route, navigation }: Props) {
                 {item.content}
               </Text>
             )}
-            {!!item.citations?.length && (
-              <View style={styles.citations}>
-                {item.citations.slice(0, 3).map((c) => (
-                  <View key={c.chunk_id} style={styles.citationPill}>
-                    <View style={styles.citationDot} />
-                    <Text style={styles.citationText} numberOfLines={1}>
-                      {c.document_title}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            )}
-          </View>
+          </Pressable>
         </View>
       );
     },
-    [language],
+    [language, copyMessage],
   );
 
   const empty = useMemo(
@@ -389,17 +460,11 @@ export default function ChatScreen({ route, navigation }: Props) {
               key={q}
               onPress={() => setInput(q)}
               android_ripple={{ color: 'rgba(7,32,63,0.08)' }}
-              style={({ pressed }) => [
-                styles.suggestionCard,
-                pressed && { opacity: 0.85 },
-              ]}
+              style={({ pressed }) => [styles.suggestionCard, pressed && { opacity: 0.85 }]}
             >
               <View style={styles.suggestionBullet} />
               <Text
-                style={[
-                  styles.suggestionText,
-                  language === 'ur' ? styles.rtl : null,
-                ]}
+                style={[styles.suggestionText, language === 'ur' ? styles.rtl : null]}
                 numberOfLines={2}
               >
                 {q}
@@ -476,6 +541,15 @@ export default function ChatScreen({ route, navigation }: Props) {
                 Speech.stop();
               }}
             />
+            <Menu.Item
+              title="Roman Urdu"
+              leadingIcon={language === 'rud' ? 'check' : undefined}
+              onPress={() => {
+                setLanguage('rud');
+                setLangMenuOpen(false);
+                Speech.stop();
+              }}
+            />
           </Menu>
           <IconButton
             icon={muted ? 'volume-off' : 'volume-high'}
@@ -530,7 +604,7 @@ export default function ChatScreen({ route, navigation }: Props) {
 
               {hasInput ? (
                 <Pressable
-                  onPress={sendTextMessage}
+                  onPress={() => sendTextMessage()}
                   disabled={busy}
                   android_ripple={{ color: 'rgba(244,238,227,0.25)' }}
                   style={({ pressed }) => [
@@ -539,20 +613,12 @@ export default function ChatScreen({ route, navigation }: Props) {
                     pressed && { opacity: 0.85 },
                   ]}
                 >
-                  <IconButton
-                    icon="arrow-up"
-                    iconColor={brand.cream}
-                    size={20}
-                    onPress={() => {}}
-                    disabled
-                    style={styles.btnIconReset}
-                  />
+                  <Icon source="arrow-up" size={22} color={brand.cream} />
                 </Pressable>
               ) : (
                 <Animated.View style={{ transform: [{ scale: recordingPulse }] }}>
                   <Pressable
-                    onPressIn={startRecording}
-                    onPressOut={stopRecordingAndSend}
+                    onPress={toggleRecording}
                     disabled={busy && !recorderState.isRecording}
                     android_ripple={{ color: 'rgba(224,162,74,0.25)' }}
                     style={({ pressed }) => [
@@ -561,20 +627,17 @@ export default function ChatScreen({ route, navigation }: Props) {
                       pressed && { opacity: 0.9 },
                     ]}
                   >
-                    <IconButton
-                      icon={recorderState.isRecording ? 'stop' : 'microphone'}
-                      iconColor={recorderState.isRecording ? brand.cream : brand.ink}
-                      size={20}
-                      onPress={() => {}}
-                      disabled
-                      style={styles.btnIconReset}
+                    <Icon
+                      source={recorderState.isRecording ? 'stop' : 'microphone'}
+                      size={22}
+                      color={recorderState.isRecording ? brand.cream : brand.ink}
                     />
                   </Pressable>
                 </Animated.View>
               )}
             </View>
             <Text style={styles.composerHint}>
-              {recorderState.isRecording ? '●  REC' : strings.micHint}
+              {recorderState.isRecording ? `●  ${strings.micHintStop}` : strings.micHint}
             </Text>
           </View>
         </KeyboardAvoidingView>
@@ -582,11 +645,30 @@ export default function ChatScreen({ route, navigation }: Props) {
 
       <Snackbar
         visible={!!error}
-        onDismiss={() => setError(null)}
-        duration={3500}
-        action={{ label: strings.snackbarClose, onPress: () => setError(null) }}
+        onDismiss={() => {
+          setError(null);
+          setRetryText(null);
+        }}
+        duration={5000}
+        action={
+          retryText
+            ? {
+                label: strings.retry,
+                onPress: () => {
+                  const t = retryText;
+                  setError(null);
+                  setRetryText(null);
+                  sendTextMessage(t);
+                },
+              }
+            : { label: strings.snackbarClose, onPress: () => setError(null) }
+        }
       >
         {error ?? ''}
+      </Snackbar>
+
+      <Snackbar visible={copied} onDismiss={() => setCopied(false)} duration={1400}>
+        {strings.copied}
       </Snackbar>
     </View>
   );
@@ -720,21 +802,6 @@ const styles = StyleSheet.create({
   bubbleText: { fontSize: 15, lineHeight: 22 },
   pendingRow: { paddingVertical: 4 },
 
-  // Citations
-  citations: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 },
-  citationPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    backgroundColor: 'rgba(191,215,238,0.55)',
-    borderRadius: 999,
-    maxWidth: '100%',
-  },
-  citationDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: brand.indigo },
-  citationText: { fontSize: 11, color: brand.ink, fontWeight: '600' },
-
   // Composer
   composerWrap: {
     paddingHorizontal: 12,
@@ -788,7 +855,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  btnIconReset: { margin: 0 },
 
   composerHint: {
     color: brand.indigoSoft,

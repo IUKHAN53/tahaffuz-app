@@ -1,4 +1,5 @@
 import Constants from 'expo-constants';
+import { fetch as expoFetch } from 'expo/fetch';
 
 const apiBase: string =
   (Constants.expoConfig?.extra as { apiBase?: string } | undefined)?.apiBase ??
@@ -51,15 +52,28 @@ export type ChatDetail = {
   }>;
 };
 
+/** Parse a response, surfacing the backend's localized {error} message on failure. */
 async function jsonOrThrow(res: Response): Promise<any> {
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`HTTP ${res.status}: ${body.slice(0, 200)}`);
+  const text = await res.text().catch(() => '');
+  let json: any = {};
+  if (text) {
+    try {
+      json = JSON.parse(text);
+    } catch {
+      json = {};
+    }
   }
-  return res.json();
+  if (!res.ok) {
+    const msg =
+      (typeof json?.error === 'string' && json.error) ||
+      (typeof json?.message === 'string' && json.message) ||
+      `Request failed (${res.status})`;
+    throw new Error(msg);
+  }
+  return json;
 }
 
-export type ReplyLanguage = 'en' | 'ur';
+export type ReplyLanguage = 'en' | 'ur' | 'rud';
 
 export async function sendText(params: {
   deviceId: string;
@@ -78,6 +92,95 @@ export async function sendText(params: {
     }),
   });
   return jsonOrThrow(res);
+}
+
+export type StreamHandlers = {
+  /** Fired once with the chat id as soon as the turn is registered. */
+  onMeta?: (chatId: number) => void;
+  /** Fired for each text chunk as the answer is generated. */
+  onDelta?: (text: string) => void;
+};
+
+/**
+ * Streamed text turn over Server-Sent Events. Resolves with the final reply.
+ * Throwing here is expected to be recoverable — callers fall back to sendText().
+ */
+export async function sendTextStream(
+  params: {
+    deviceId: string;
+    message: string;
+    chatId?: number | null;
+    language?: ReplyLanguage;
+  },
+  handlers: StreamHandlers = {},
+): Promise<ChatReply> {
+  const res = await expoFetch(`${apiBase}/api/chat/text/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+    body: JSON.stringify({
+      device_id: params.deviceId,
+      message: params.message,
+      chat_id: params.chatId ?? null,
+      language: params.language,
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Stream request failed (${res.status})`);
+  }
+  const body = res.body;
+  if (!body) {
+    throw new Error('Streaming not available');
+  }
+
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let result: ChatReply | null = null;
+  let streamError: string | null = null;
+
+  const handleEvent = (raw: string) => {
+    let event = 'message';
+    const data: string[] = [];
+    for (const line of raw.split('\n')) {
+      if (line.startsWith('event:')) event = line.slice(6).trim();
+      else if (line.startsWith('data:')) data.push(line.slice(5).trim());
+    }
+    if (data.length === 0) return;
+    let payload: any;
+    try {
+      payload = JSON.parse(data.join(''));
+    } catch {
+      return;
+    }
+    if (event === 'meta' && typeof payload?.chat_id === 'number') {
+      handlers.onMeta?.(payload.chat_id);
+    } else if (event === 'delta' && typeof payload?.text === 'string') {
+      handlers.onDelta?.(payload.text);
+    } else if (event === 'done' && payload?.reply) {
+      result = payload as ChatReply;
+    } else if (event === 'error') {
+      streamError = typeof payload?.error === 'string' ? payload.error : 'Stream error';
+    }
+  };
+
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (value) {
+      buffer += decoder.decode(value, { stream: true });
+      let idx: number;
+      while ((idx = buffer.indexOf('\n\n')) !== -1) {
+        handleEvent(buffer.slice(0, idx));
+        buffer = buffer.slice(idx + 2);
+      }
+    }
+    if (done) break;
+  }
+  if (buffer.trim()) handleEvent(buffer);
+
+  if (streamError) throw new Error(streamError);
+  if (!result) throw new Error('Stream ended without a result');
+  return result;
 }
 
 export async function sendAudio(params: {

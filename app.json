@@ -20,10 +20,16 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "permissions": ["android.permission.RECORD_AUDIO"]
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
     },
     "extra": {
-      "apiBase": "https://tahaffuz.tpfm.tameerekhalaq.org"
+      "apiBase": "https://tahaffuz.tpfm.tameerekhalaq.org",
+      "eas": {
+        "projectId": "707a21b8-e883-4114-9ee4-a383de2e745e"
+      }
     },
     "plugins": [
       [
@@ -31,7 +37,9 @@
         {
           "microphonePermission": "Tahaffuz uses your microphone for voice questions."
         }
-      ]
-    ]
+      ],
+      "expo-asset"
+    ],
+    "owner": "iukhan"
   }
 }
