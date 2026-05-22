@@ -4,10 +4,12 @@ import { NavigationContainer, DefaultTheme as NavLightTheme } from '@react-navig
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { PaperProvider } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 
 import SessionsScreen from './src/screens/SessionsScreen';
 import ChatScreen from './src/screens/ChatScreen';
 import { paperTheme } from './src/theme';
+import { LanguageProvider } from './src/language';
 import type { RootStackParamList } from './src/navigation';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -27,18 +29,22 @@ const navTheme = {
 export default function App() {
   return (
     <SafeAreaProvider>
-      <PaperProvider theme={paperTheme}>
-        <NavigationContainer theme={navTheme}>
-          <StatusBar style="light" backgroundColor={paperTheme.colors.primary} />
-          <Stack.Navigator
-            initialRouteName="Sessions"
-            screenOptions={{ headerShown: false, animation: 'slide_from_right' }}
-          >
-            <Stack.Screen name="Sessions" component={SessionsScreen} />
-            <Stack.Screen name="Chat" component={ChatScreen} />
-          </Stack.Navigator>
-        </NavigationContainer>
-      </PaperProvider>
+      <KeyboardProvider>
+        <LanguageProvider>
+          <PaperProvider theme={paperTheme}>
+            <NavigationContainer theme={navTheme}>
+              <StatusBar style="light" backgroundColor={paperTheme.colors.primary} />
+              <Stack.Navigator
+                initialRouteName="Sessions"
+                screenOptions={{ headerShown: false, animation: 'slide_from_right' }}
+              >
+                <Stack.Screen name="Sessions" component={SessionsScreen} />
+                <Stack.Screen name="Chat" component={ChatScreen} />
+              </Stack.Navigator>
+            </NavigationContainer>
+          </PaperProvider>
+        </LanguageProvider>
+      </KeyboardProvider>
     </SafeAreaProvider>
   );
 }

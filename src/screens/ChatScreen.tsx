@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Easing,
   FlatList,
-  KeyboardAvoidingView,
   Platform,
   Pressable,
   StatusBar,
@@ -19,6 +18,7 @@ import {
   TextInput,
   useTheme,
 } from 'react-native-paper';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Speech from 'expo-speech';
 import * as Clipboard from 'expo-clipboard';
@@ -34,6 +34,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { getChat, sendAudio, sendText, sendTextStream, type ReplyLanguage } from '../api';
 import { getDeviceId } from '../deviceId';
 import { upsertSession } from '../sessions';
+import { useLanguage } from '../language';
 import { brand, palette } from '../theme';
 import { BrandMark } from '../components/BrandMark';
 import { TypingDots } from '../components/TypingDots';
@@ -150,15 +151,61 @@ const TTS_LANG: Record<ReplyLanguage, string> = { en: 'en-US', ur: 'ur-PK', rud:
 const isPlaceholderTitleText = (t: string) =>
   t === COPY.en.newChat || t === COPY.ur.newChat || t === COPY.rud.newChat;
 
+/** A single chat bubble — memoized so streaming only re-renders the live message. */
+const MessageBubble = memo(function MessageBubble({
+  item,
+  isRtl,
+  onCopy,
+}: {
+  item: Msg;
+  isRtl: boolean;
+  onCopy: (text: string) => void;
+}) {
+  const isUser = item.role === 'user';
+  return (
+    <View style={[styles.row, isUser ? styles.rowRight : styles.rowLeft]}>
+      {!isUser && (
+        <View style={styles.botAvatar}>
+          <BrandMark size={20} />
+        </View>
+      )}
+      <Pressable
+        onLongPress={() => onCopy(item.content)}
+        delayLongPress={320}
+        android_ripple={{ color: 'rgba(7,32,63,0.06)' }}
+        style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleBot]}
+      >
+        {item.pending && item.content === '' ? (
+          <View style={styles.pendingRow}>
+            <TypingDots size={6} color={brand.amber} />
+          </View>
+        ) : (
+          <Text
+            selectable
+            style={[
+              styles.bubbleText,
+              { color: isUser ? palette.userBubbleText : palette.botBubbleText },
+              isRtl ? styles.rtl : null,
+            ]}
+          >
+            {item.content}
+          </Text>
+        )}
+      </Pressable>
+    </View>
+  );
+});
+
 export default function ChatScreen({ route, navigation }: Props) {
   const theme = useTheme();
+  const { language, setLanguage } = useLanguage();
+  const strings = COPY[language];
+  const isRtl = language === 'ur';
   const initialChatId = route.params?.chatId ?? null;
 
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [chatId, setChatId] = useState<number | null>(initialChatId);
-  const [language, setLanguage] = useState<ReplyLanguage>('en');
   const [langMenuOpen, setLangMenuOpen] = useState(false);
-  const strings = COPY[language];
   const [chatTitle, setChatTitle] = useState<string>(strings.newChat);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
@@ -208,10 +255,6 @@ export default function ChatScreen({ route, navigation }: Props) {
         try {
           const detail = await getChat(id, initialChatId);
           if (detail.chat.title) setChatTitle(detail.chat.title);
-          const lang = detail.chat.language;
-          if (lang === 'en' || lang === 'ur' || lang === 'rud') {
-            setLanguage(lang);
-          }
           setMessages(
             detail.messages.map((m) => ({
               id: `s${m.id}`,
@@ -311,7 +354,6 @@ export default function ChatScreen({ route, navigation }: Props) {
         speak(res.reply.content);
       } catch (streamErr: any) {
         if (sawDelta) {
-          // A partial answer is already on screen — show a soft error, offer retry.
           setError(streamErr?.message ?? strings.errorNet);
           setRetryText(text);
         } else {
@@ -402,43 +444,8 @@ export default function ChatScreen({ route, navigation }: Props) {
   }, [recorderState.isRecording, startRecording, stopRecordingAndSend]);
 
   const renderItem = useCallback(
-    ({ item }: { item: Msg }) => {
-      const isUser = item.role === 'user';
-      const isRtl = language === 'ur';
-      return (
-        <View style={[styles.row, isUser ? styles.rowRight : styles.rowLeft]}>
-          {!isUser && (
-            <View style={styles.botAvatar}>
-              <BrandMark size={20} />
-            </View>
-          )}
-          <Pressable
-            onLongPress={() => copyMessage(item.content)}
-            delayLongPress={320}
-            android_ripple={{ color: 'rgba(7,32,63,0.06)' }}
-            style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleBot]}
-          >
-            {item.pending && item.content === '' ? (
-              <View style={styles.pendingRow}>
-                <TypingDots size={6} color={brand.amber} />
-              </View>
-            ) : (
-              <Text
-                selectable
-                style={[
-                  styles.bubbleText,
-                  { color: isUser ? palette.userBubbleText : palette.botBubbleText },
-                  isRtl ? styles.rtl : null,
-                ]}
-              >
-                {item.content}
-              </Text>
-            )}
-          </Pressable>
-        </View>
-      );
-    },
-    [language, copyMessage],
+    ({ item }: { item: Msg }) => <MessageBubble item={item} isRtl={isRtl} onCopy={copyMessage} />,
+    [isRtl, copyMessage],
   );
 
   const empty = useMemo(
@@ -448,12 +455,8 @@ export default function ChatScreen({ route, navigation }: Props) {
           <BrandMark size={84} />
         </View>
         <Text style={styles.eyebrow}>{strings.eyebrow}</Text>
-        <Text style={[styles.emptyHeadline, language === 'ur' ? styles.rtl : null]}>
-          {strings.greeting}
-        </Text>
-        <Text style={[styles.emptyHint, language === 'ur' ? styles.rtl : null]}>
-          {strings.greetingHint}
-        </Text>
+        <Text style={[styles.emptyHeadline, isRtl ? styles.rtl : null]}>{strings.greeting}</Text>
+        <Text style={[styles.emptyHint, isRtl ? styles.rtl : null]}>{strings.greetingHint}</Text>
         <View style={styles.suggestions}>
           {strings.suggestions.map((q) => (
             <Pressable
@@ -463,10 +466,7 @@ export default function ChatScreen({ route, navigation }: Props) {
               style={({ pressed }) => [styles.suggestionCard, pressed && { opacity: 0.85 }]}
             >
               <View style={styles.suggestionBullet} />
-              <Text
-                style={[styles.suggestionText, language === 'ur' ? styles.rtl : null]}
-                numberOfLines={2}
-              >
+              <Text style={[styles.suggestionText, isRtl ? styles.rtl : null]} numberOfLines={2}>
                 {q}
               </Text>
             </Pressable>
@@ -474,7 +474,7 @@ export default function ChatScreen({ route, navigation }: Props) {
         </View>
       </View>
     ),
-    [language, strings.eyebrow, strings.greeting, strings.greetingHint, strings.suggestions],
+    [isRtl, strings.eyebrow, strings.greeting, strings.greetingHint, strings.suggestions],
   );
 
   const hasInput = input.trim().length > 0;
@@ -502,10 +502,7 @@ export default function ChatScreen({ route, navigation }: Props) {
               <BrandMark size={22} />
               <Text style={styles.headerBrandText}>Tahaffuz</Text>
             </View>
-            <Text
-              style={[styles.headerSubtitle, language === 'ur' ? styles.rtl : null]}
-              numberOfLines={1}
-            >
+            <Text style={[styles.headerSubtitle, isRtl ? styles.rtl : null]} numberOfLines={1}>
               {chatTitle}
             </Text>
           </View>
@@ -569,11 +566,7 @@ export default function ChatScreen({ route, navigation }: Props) {
           <TypingDots size={8} />
         </View>
       ) : (
-        <KeyboardAvoidingView
-          style={styles.flex}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
-        >
+        <KeyboardAvoidingView style={styles.flex} behavior="padding" keyboardVerticalOffset={0}>
           <FlatList
             ref={listRef}
             data={messages}
@@ -583,6 +576,11 @@ export default function ChatScreen({ route, navigation }: Props) {
             ListEmptyComponent={empty}
             onContentSizeChange={scroll}
             showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            initialNumToRender={14}
+            maxToRenderPerBatch={10}
+            windowSize={11}
           />
 
           <View style={styles.composerWrap}>
@@ -596,7 +594,7 @@ export default function ChatScreen({ route, navigation }: Props) {
                 placeholder={strings.placeholder}
                 placeholderTextColor="rgba(7,32,63,0.42)"
                 style={styles.input}
-                contentStyle={[styles.inputContent, language === 'ur' ? styles.rtl : null]}
+                contentStyle={[styles.inputContent, isRtl ? styles.rtl : null]}
                 underlineStyle={{ display: 'none' }}
                 editable={!busy}
                 cursorColor={brand.indigo}
