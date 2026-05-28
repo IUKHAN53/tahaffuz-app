@@ -26,12 +26,13 @@ import {
   AudioModule,
   RecordingPresets,
   setAudioModeAsync,
+  useAudioPlayer,
   useAudioRecorder,
   useAudioRecorderState,
 } from 'expo-audio';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
-import { getChat, sendAudio, sendText, sendTextStream, type ReplyLanguage } from '../api';
+import { getChat, sendAudio, sendText, sendTextStream, ttsUrl, type ReplyLanguage } from '../api';
 import { getDeviceId } from '../deviceId';
 import { upsertSession } from '../sessions';
 import { useLanguage } from '../language';
@@ -220,6 +221,7 @@ export default function ChatScreen({ route, navigation }: Props) {
   const messagesRef = useRef<Msg[]>([]);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder);
+  const ttsPlayer = useAudioPlayer(null);
   const recordingPulse = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -273,6 +275,9 @@ export default function ChatScreen({ route, navigation }: Props) {
     })();
     return () => {
       Speech.stop();
+      try {
+        ttsPlayer.pause();
+      } catch {}
     };
   }, [initialChatId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -280,13 +285,35 @@ export default function ChatScreen({ route, navigation }: Props) {
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
   }, []);
 
+  const stopSpeaking = useCallback(() => {
+    Speech.stop();
+    try {
+      ttsPlayer.pause();
+    } catch {}
+  }, [ttsPlayer]);
+
   const speak = useCallback(
-    (text: string) => {
+    async (text: string) => {
       if (muted || !text.trim()) return;
-      Speech.stop();
-      Speech.speak(text, { language: TTS_LANG[language], pitch: 1.0, rate: 0.95 });
+      stopSpeaking();
+      const url = ttsUrl(text, language);
+      try {
+        // Validate the synthesis succeeded before handing the URL to the player
+        // so a server/quota failure cleanly falls back to the on-device voice
+        // instead of playing silence. The backend caches the WAV, so the
+        // player's subsequent stream of the same URL is a cheap cache hit.
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('tts unavailable');
+        // Route audio to the loudspeaker — leaving the session in recording
+        // mode can otherwise pin playback to the earpiece on Android.
+        await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+        ttsPlayer.replace({ uri: url });
+        ttsPlayer.play();
+      } catch {
+        Speech.speak(text, { language: TTS_LANG[language], pitch: 1.0, rate: 0.95 });
+      }
     },
-    [language, muted],
+    [language, muted, stopSpeaking, ttsPlayer],
   );
 
   const persistSession = useCallback(
@@ -382,6 +409,8 @@ export default function ChatScreen({ route, navigation }: Props) {
     if (!deviceId || busy || recorderState.isRecording) return;
     setError(null);
     try {
+      // Re-enable the recording session (playback may have switched it off).
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
       await recorder.prepareToRecordAsync();
       recorder.record();
     } catch (e: any) {
@@ -526,7 +555,7 @@ export default function ChatScreen({ route, navigation }: Props) {
               onPress={() => {
                 setLanguage('en');
                 setLangMenuOpen(false);
-                Speech.stop();
+                stopSpeaking();
               }}
             />
             <Menu.Item
@@ -535,7 +564,7 @@ export default function ChatScreen({ route, navigation }: Props) {
               onPress={() => {
                 setLanguage('ur');
                 setLangMenuOpen(false);
-                Speech.stop();
+                stopSpeaking();
               }}
             />
             <Menu.Item
@@ -544,7 +573,7 @@ export default function ChatScreen({ route, navigation }: Props) {
               onPress={() => {
                 setLanguage('rud');
                 setLangMenuOpen(false);
-                Speech.stop();
+                stopSpeaking();
               }}
             />
           </Menu>
@@ -554,7 +583,7 @@ export default function ChatScreen({ route, navigation }: Props) {
             size={22}
             onPress={() => {
               setMuted((m) => !m);
-              Speech.stop();
+              stopSpeaking();
             }}
             style={styles.headerIcon}
           />

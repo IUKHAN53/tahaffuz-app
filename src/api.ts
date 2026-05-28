@@ -208,6 +208,17 @@ export async function sendAudio(params: {
   return jsonOrThrow(res);
 }
 
+/**
+ * URL for the server-side TTS audio (audio/wav). An audio player can stream
+ * this directly. `lang` is a hint the backend uses to decide whether Latin text
+ * is English or Roman Urdu (Roman Urdu is transliterated to Urdu script before
+ * synthesis); Urdu-script text is always voiced as Urdu regardless.
+ */
+export function ttsUrl(text: string, lang: ReplyLanguage): string {
+  const q = new URLSearchParams({ text, lang });
+  return `${apiBase}/api/tts?${q.toString()}`;
+}
+
 export async function ping(): Promise<boolean> {
   try {
     const res = await fetch(`${apiBase}/api/health`);
