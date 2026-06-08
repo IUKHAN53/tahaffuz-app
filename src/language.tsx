@@ -18,10 +18,11 @@ const STORAGE_KEY = 'tahaffuz.language.v1';
 const DEFAULT_LANGUAGE: AppLanguage = 'en';
 
 const isAppLanguage = (v: unknown): v is AppLanguage =>
-  v === 'en' || v === 'ur' || v === 'rud';
+  v === 'en' || v === 'ur' || v === 'rud' || v === 'ps' || v === 'sd';
 
-/** True when the language is written right-to-left (Urdu script). */
-export const isRtl = (lang: AppLanguage): boolean => lang === 'ur';
+/** True when the language is written right-to-left (Urdu, Pashto, Sindhi script). */
+export const isRtl = (lang: AppLanguage): boolean =>
+  lang === 'ur' || lang === 'ps' || lang === 'sd';
 
 type LanguageContextValue = {
   language: AppLanguage;

@@ -73,7 +73,7 @@ async function jsonOrThrow(res: Response): Promise<any> {
   return json;
 }
 
-export type ReplyLanguage = 'en' | 'ur' | 'rud';
+export type ReplyLanguage = 'en' | 'ur' | 'rud' | 'ps' | 'sd';
 
 export async function sendText(params: {
   deviceId: string;

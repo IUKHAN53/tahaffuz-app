@@ -144,25 +144,84 @@ const COPY: Record<ReplyLanguage, Strings> = {
     copied: 'Jawab copy ho gaya',
     retry: 'Dobaara koshish',
   },
+  ps: {
+    newChat: 'نوې خبرې',
+    eyebrow: 'روزنې مرستندویه',
+    greeting: 'نن ورځ زه څنګه مرسته کولی شم؟',
+    greetingHint: 'د واکسینونو، کولډ چین، یا واکسینیشن سیشن په اړه پوښتنه وکړئ.',
+    suggestions: [
+      'د کولډ چین تودوخه څومره وي؟',
+      'د پولیو واکسین کله ورکول کیږي؟',
+      'BCG واکسین څه مخنیوی کوي؟',
+    ],
+    placeholder: 'پوښتنه ولیکئ…',
+    errorLoad: 'لوډ ناکام شو',
+    errorNet: 'د شبکې ستونزه',
+    errorMic: 'مایکروفون ناکام شو',
+    errorNoAudio: 'آډیو ریکارډ نه شو',
+    errorVoice: 'د غږ غوښتنه ناکامه شوه',
+    voicePlaceholder: 'غږیز پیغام…',
+    voiceTranscriptFallback: 'غږیز پیغام',
+    snackbarClose: 'بند کړئ',
+    micHint: 'ریکارډ لپاره ټپ کړئ',
+    micHintStop: 'ودرولو لپاره ټپ کړئ',
+    copied: 'ځواب کاپي شو',
+    retry: 'بیا هڅه وکړئ',
+  },
+  sd: {
+    newChat: 'نئين چيٽ',
+    eyebrow: 'تربيتي معاون',
+    greeting: 'اڄ مان ڪيئن مدد ڪري سگهان ٿو؟',
+    greetingHint: 'ويڪسينيشن، ڪولڊ چين، يا حفاظتي ٽيڪن جي سيشن بابت سوال پڇو.',
+    suggestions: [
+      'ڪولڊ چين جو درجو ڪيترو هجڻ گهرجي؟',
+      'پوليو ويڪسين ڪڏهن ڏني ويندي آهي؟',
+      'BCG ويڪسين ڇا روڪيندي آهي؟',
+    ],
+    placeholder: 'سوال هتي لکو…',
+    errorLoad: 'لوڊ ناڪام',
+    errorNet: 'نيٽ ورڪ جي خرابي',
+    errorMic: 'مائڪ ناڪام',
+    errorNoAudio: 'ڪا آڊيو رڪارڊ نه ٿي',
+    errorVoice: 'آواز جي درخواست ناڪام',
+    voicePlaceholder: 'آواز جو پيغام…',
+    voiceTranscriptFallback: 'آواز جو پيغام',
+    snackbarClose: 'بند ڪريو',
+    micHint: 'رڪارڊ ڪرڻ لاءِ ٽيپ ڪريو',
+    micHintStop: 'روڪڻ لاءِ ٽيپ ڪريو',
+    copied: 'جواب ڪاپي ٿي ويو',
+    retry: 'ٻيهر ڪوشش',
+  },
 };
 
 // Roman Urdu has no voice of its own — read it with the Urdu engine.
-const TTS_LANG: Record<ReplyLanguage, string> = { en: 'en-US', ur: 'ur-PK', rud: 'ur-PK' };
+// Pashto and Sindhi use their respective language codes for server TTS.
+const TTS_LANG: Record<ReplyLanguage, string> = {
+  en: 'en-US',
+  ur: 'ur-PK',
+  rud: 'ur-PK',
+  ps: 'ps-AF',
+  sd: 'sd-PK',
+};
 
 const isPlaceholderTitleText = (t: string) =>
-  t === COPY.en.newChat || t === COPY.ur.newChat || t === COPY.rud.newChat;
+  t === COPY.en.newChat || t === COPY.ur.newChat || t === COPY.rud.newChat ||
+  t === COPY.ps.newChat || t === COPY.sd.newChat;
 
 /** A single chat bubble — memoized so streaming only re-renders the live message. */
 const MessageBubble = memo(function MessageBubble({
   item,
   isRtl,
   onCopy,
+  onSpeak,
 }: {
   item: Msg;
   isRtl: boolean;
   onCopy: (text: string) => void;
+  onSpeak: (text: string) => void;
 }) {
   const isUser = item.role === 'user';
+  const showPlayBtn = !isUser && !item.pending && item.content.trim().length > 0;
   return (
     <View style={[styles.row, isUser ? styles.rowRight : styles.rowLeft]}>
       {!isUser && (
@@ -170,29 +229,40 @@ const MessageBubble = memo(function MessageBubble({
           <BrandMark size={20} />
         </View>
       )}
-      <Pressable
-        onLongPress={() => onCopy(item.content)}
-        delayLongPress={320}
-        android_ripple={{ color: 'rgba(7,32,63,0.06)' }}
-        style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleBot]}
-      >
-        {item.pending && item.content === '' ? (
-          <View style={styles.pendingRow}>
-            <TypingDots size={6} color={brand.amber} />
-          </View>
-        ) : (
-          <Text
-            selectable
-            style={[
-              styles.bubbleText,
-              { color: isUser ? palette.userBubbleText : palette.botBubbleText },
-              isRtl ? styles.rtl : null,
-            ]}
+      <View style={styles.bubbleWrapper}>
+        <Pressable
+          onLongPress={() => onCopy(item.content)}
+          delayLongPress={320}
+          android_ripple={{ color: 'rgba(7,32,63,0.06)' }}
+          style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleBot]}
+        >
+          {item.pending && item.content === '' ? (
+            <View style={styles.pendingRow}>
+              <TypingDots size={6} color={brand.amber} />
+            </View>
+          ) : (
+            <Text
+              selectable
+              style={[
+                styles.bubbleText,
+                { color: isUser ? palette.userBubbleText : palette.botBubbleText },
+                isRtl ? styles.rtl : null,
+              ]}
+            >
+              {item.content}
+            </Text>
+          )}
+        </Pressable>
+        {showPlayBtn && (
+          <Pressable
+            onPress={() => onSpeak(item.content)}
+            android_ripple={{ color: 'rgba(7,32,63,0.08)' }}
+            style={({ pressed }) => [styles.playBtn, pressed && { opacity: 0.7 }]}
           >
-            {item.content}
-          </Text>
+            <Icon source="volume-high" size={16} color={brand.indigoSoft} />
+          </Pressable>
         )}
-      </Pressable>
+      </View>
     </View>
   );
 });
@@ -201,7 +271,7 @@ export default function ChatScreen({ route, navigation }: Props) {
   const theme = useTheme();
   const { language, setLanguage } = useLanguage();
   const strings = COPY[language];
-  const isRtl = language === 'ur';
+  const isRtl = language === 'ur' || language === 'ps' || language === 'sd';
   const initialChatId = route.params?.chatId ?? null;
 
   const [deviceId, setDeviceId] = useState<string | null>(null);
@@ -473,8 +543,10 @@ export default function ChatScreen({ route, navigation }: Props) {
   }, [recorderState.isRecording, startRecording, stopRecordingAndSend]);
 
   const renderItem = useCallback(
-    ({ item }: { item: Msg }) => <MessageBubble item={item} isRtl={isRtl} onCopy={copyMessage} />,
-    [isRtl, copyMessage],
+    ({ item }: { item: Msg }) => (
+      <MessageBubble item={item} isRtl={isRtl} onCopy={copyMessage} onSpeak={speak} />
+    ),
+    [isRtl, copyMessage, speak],
   );
 
   const empty = useMemo(
@@ -572,6 +644,24 @@ export default function ChatScreen({ route, navigation }: Props) {
               leadingIcon={language === 'rud' ? 'check' : undefined}
               onPress={() => {
                 setLanguage('rud');
+                setLangMenuOpen(false);
+                stopSpeaking();
+              }}
+            />
+            <Menu.Item
+              title="پښتو"
+              leadingIcon={language === 'ps' ? 'check' : undefined}
+              onPress={() => {
+                setLanguage('ps');
+                setLangMenuOpen(false);
+                stopSpeaking();
+              }}
+            />
+            <Menu.Item
+              title="سنڌي"
+              leadingIcon={language === 'sd' ? 'check' : undefined}
+              onPress={() => {
+                setLanguage('sd');
                 setLangMenuOpen(false);
                 stopSpeaking();
               }}
@@ -803,7 +893,6 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(7,32,63,0.06)',
   },
   bubble: {
-    maxWidth: '82%',
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 18,
@@ -828,6 +917,15 @@ const styles = StyleSheet.create({
   },
   bubbleText: { fontSize: 15, lineHeight: 22 },
   pendingRow: { paddingVertical: 4 },
+  bubbleWrapper: { maxWidth: '82%' },
+  playBtn: {
+    alignSelf: 'flex-start',
+    marginTop: 4,
+    marginLeft: 6,
+    padding: 6,
+    borderRadius: 12,
+    backgroundColor: 'rgba(7,32,63,0.05)',
+  },
 
   // Composer
   composerWrap: {
