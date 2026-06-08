@@ -221,7 +221,8 @@ const MessageBubble = memo(function MessageBubble({
   onSpeak: (text: string) => void;
 }) {
   const isUser = item.role === 'user';
-  const showPlayBtn = !isUser && !item.pending && item.content.trim().length > 0;
+  const canPlay = !item.pending && item.content.trim().length > 0;
+
   return (
     <View style={[styles.row, isUser ? styles.rowRight : styles.rowLeft]}>
       {!isUser && (
@@ -229,39 +230,52 @@ const MessageBubble = memo(function MessageBubble({
           <BrandMark size={20} />
         </View>
       )}
-      <View style={styles.bubbleWrapper}>
-        <Pressable
-          onLongPress={() => onCopy(item.content)}
-          delayLongPress={320}
-          android_ripple={{ color: 'rgba(7,32,63,0.06)' }}
-          style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleBot]}
-        >
-          {item.pending && item.content === '' ? (
-            <View style={styles.pendingRow}>
-              <TypingDots size={6} color={brand.amber} />
-            </View>
-          ) : (
-            <Text
-              selectable
-              style={[
-                styles.bubbleText,
-                { color: isUser ? palette.userBubbleText : palette.botBubbleText },
-                isRtl ? styles.rtl : null,
-              ]}
+      <View style={[styles.bubbleWrapper, isUser && styles.bubbleWrapperUser]}>
+        <View style={[styles.bubbleRow, isUser && styles.bubbleRowUser]}>
+          {/* Play button on the left for bot messages */}
+          {!isUser && canPlay && (
+            <Pressable
+              onPress={() => onSpeak(item.content)}
+              android_ripple={{ color: 'rgba(7,32,63,0.12)' }}
+              style={({ pressed }) => [styles.playBtnInline, styles.playBtnBot, pressed && { opacity: 0.7 }]}
             >
-              {item.content}
-            </Text>
+              <Icon source="volume-high" size={18} color={brand.indigo} />
+            </Pressable>
           )}
-        </Pressable>
-        {showPlayBtn && (
           <Pressable
-            onPress={() => onSpeak(item.content)}
-            android_ripple={{ color: 'rgba(7,32,63,0.08)' }}
-            style={({ pressed }) => [styles.playBtn, pressed && { opacity: 0.7 }]}
+            onLongPress={() => onCopy(item.content)}
+            delayLongPress={320}
+            android_ripple={{ color: 'rgba(7,32,63,0.06)' }}
+            style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleBot]}
           >
-            <Icon source="volume-high" size={16} color={brand.indigoSoft} />
+            {item.pending && item.content === '' ? (
+              <View style={styles.pendingRow}>
+                <TypingDots size={6} color={brand.amber} />
+              </View>
+            ) : (
+              <Text
+                selectable
+                style={[
+                  styles.bubbleText,
+                  { color: isUser ? palette.userBubbleText : palette.botBubbleText },
+                  isRtl ? styles.rtl : null,
+                ]}
+              >
+                {item.content}
+              </Text>
+            )}
           </Pressable>
-        )}
+          {/* Play button on the right for user messages */}
+          {isUser && canPlay && (
+            <Pressable
+              onPress={() => onSpeak(item.content)}
+              android_ripple={{ color: 'rgba(244,238,227,0.25)' }}
+              style={({ pressed }) => [styles.playBtnInline, styles.playBtnUser, pressed && { opacity: 0.7 }]}
+            >
+              <Icon source="volume-high" size={18} color={brand.cream} />
+            </Pressable>
+          )}
+        </View>
       </View>
     </View>
   );
@@ -917,14 +931,23 @@ const styles = StyleSheet.create({
   },
   bubbleText: { fontSize: 15, lineHeight: 22 },
   pendingRow: { paddingVertical: 4 },
-  bubbleWrapper: { maxWidth: '82%' },
-  playBtn: {
-    alignSelf: 'flex-start',
-    marginTop: 4,
-    marginLeft: 6,
-    padding: 6,
-    borderRadius: 12,
-    backgroundColor: 'rgba(7,32,63,0.05)',
+  bubbleWrapper: { maxWidth: '85%' },
+  bubbleWrapperUser: { alignItems: 'flex-end' },
+  bubbleRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 6 },
+  bubbleRowUser: { flexDirection: 'row-reverse' },
+  playBtnInline: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  playBtnBot: {
+    backgroundColor: 'rgba(7,32,63,0.08)',
+  },
+  playBtnUser: {
+    backgroundColor: 'rgba(244,238,227,0.2)',
   },
 
   // Composer
