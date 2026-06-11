@@ -190,22 +190,37 @@ export async function sendAudio(params: {
   chatId?: number | null;
   language?: ReplyLanguage;
 }): Promise<ChatReply> {
-  const form = new FormData();
-  form.append('device_id', params.deviceId);
-  if (params.chatId) form.append('chat_id', String(params.chatId));
-  if (params.language) form.append('language', params.language);
-  // RN's FormData accepts a {uri, name, type} object; TS types lag behind the runtime.
-  form.append('audio', {
-    uri: params.audioUri,
-    name: 'voice.m4a',
-    type: params.audioMime || 'audio/m4a',
-  } as unknown as Blob);
-  const res = await fetch(`${apiBase}/api/chat/audio`, {
-    method: 'POST',
-    headers: { Accept: 'application/json' },
-    body: form,
-  });
-  return jsonOrThrow(res);
+  const doSend = async (): Promise<ChatReply> => {
+    const form = new FormData();
+    form.append('device_id', params.deviceId);
+    if (params.chatId) form.append('chat_id', String(params.chatId));
+    if (params.language) form.append('language', params.language);
+    // RN's FormData accepts a {uri, name, type} object; TS types lag behind the runtime.
+    form.append('audio', {
+      uri: params.audioUri,
+      name: 'voice.m4a',
+      type: params.audioMime || 'audio/m4a',
+    } as unknown as Blob);
+    const res = await fetch(`${apiBase}/api/chat/audio`, {
+      method: 'POST',
+      headers: { Accept: 'application/json' },
+      body: form,
+    });
+    return jsonOrThrow(res);
+  };
+
+  try {
+    return await doSend();
+  } catch (e: any) {
+    // RN raises "Network request failed" when the upload dies at the
+    // connection level (stale pooled socket, cold radio) — the server never
+    // saw the request, so one retry is safe and fixes the first-send failure.
+    const isConnectionFailure =
+      e instanceof TypeError || /network request failed/i.test(e?.message ?? '');
+    if (!isConnectionFailure) throw e;
+    await new Promise((r) => setTimeout(r, 600));
+    return doSend();
+  }
 }
 
 /**
