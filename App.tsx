@@ -8,6 +8,8 @@ import { KeyboardProvider } from 'react-native-keyboard-controller';
 
 import SessionsScreen from './src/screens/SessionsScreen';
 import ChatScreen from './src/screens/ChatScreen';
+import BookmarksScreen from './src/screens/BookmarksScreen';
+import SearchScreen from './src/screens/SearchScreen';
 import { paperTheme } from './src/theme';
 import { LanguageProvider } from './src/language';
 import type { RootStackParamList } from './src/navigation';
@@ -40,6 +42,8 @@ export default function App() {
               >
                 <Stack.Screen name="Sessions" component={SessionsScreen} />
                 <Stack.Screen name="Chat" component={ChatScreen} />
+                <Stack.Screen name="Bookmarks" component={BookmarksScreen} />
+                <Stack.Screen name="Search" component={SearchScreen} />
               </Stack.Navigator>
             </NavigationContainer>
           </PaperProvider>

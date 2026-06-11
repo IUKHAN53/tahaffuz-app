@@ -11,6 +11,7 @@ import {
 import {
   Button,
   Dialog,
+  Icon,
   Portal,
   Snackbar,
   Text,
@@ -103,6 +104,40 @@ const COPY: Record<AppLanguage, Strings> = {
     deleteFail: 'Server par delete nakaam.',
     time: { now: 'abhi', min: ' min pehle', hr: ' ghante pehle', day: ' din pehle' },
   },
+  ps: {
+    tag: 'واکسینیټر · اے آئی مرستندویه',
+    statChats: 'خبرې',
+    statToday: 'نن',
+    getStarted: 'پیل کړئ',
+    readyHeadline: 'ستاسو مرستندویه چمتو دی.',
+    readyHint: 'د واکسینونو، کولډ چین، شیډول، یا سیشن څارنې په اړه پوښتنه وکړئ.',
+    startChat: 'نوې خبرې پیل کړئ',
+    untitled: 'بې سرلیکه خبرې',
+    deleteTitle: 'دا خبرې حذف کړئ؟',
+    deleteBody: (t) => `"${t}" به تل لپاره حذف شي.`,
+    cancel: 'لغوه',
+    delete: 'حذف کړئ',
+    refreshFail: 'تازه نه شو — زیرمه شوي ښودل کیږي.',
+    deleteFail: 'په سرور کې حذف ناکام شو.',
+    time: { now: 'اوس', min: ' دقیقې مخکې', hr: ' ساعتونه مخکې', day: ' ورځې مخکې' },
+  },
+  sd: {
+    tag: 'ويڪسينيٽر · اي آءِ معاون',
+    statChats: 'چيٽس',
+    statToday: 'اڄ',
+    getStarted: 'شروعات',
+    readyHeadline: 'توهان جو معاون تيار آهي.',
+    readyHint: 'ويڪسين، ڪولڊ چين، شيڊول، يا سيشن مانيٽرنگ بابت پڇو.',
+    startChat: 'نئين گفتگو شروع ڪريو',
+    untitled: 'بغير عنوان گفتگو',
+    deleteTitle: 'هي گفتگو ختم ڪريو؟',
+    deleteBody: (t) => `"${t}" هميشه لاءِ ختم ٿي ويندي.`,
+    cancel: 'منسوخ',
+    delete: 'ختم ڪريو',
+    refreshFail: 'ريفريش نه ٿي سگهيو — محفوظ ڏيکاريو پيو وڃي.',
+    deleteFail: 'سرور تي ختم ناڪام.',
+    time: { now: 'هاڻي', min: ' منٽ اڳ', hr: ' ڪلاڪ اڳ', day: ' ڏينهن اڳ' },
+  },
 };
 
 function relativeTime(iso: string, t: TimeStrings): string {
@@ -178,7 +213,7 @@ export default function SessionsScreen({ navigation }: Props) {
   const theme = useTheme();
   const { language } = useLanguage();
   const s = COPY[language];
-  const rtl = language === 'ur';
+  const rtl = language === 'ur' || language === 'ps' || language === 'sd';
 
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [sessions, setSessions] = useState<LocalSession[]>([]);
@@ -277,7 +312,27 @@ export default function SessionsScreen({ navigation }: Props) {
                 </Text>
               </View>
             </View>
-            <LanguageSwitcher />
+            <View style={styles.headerActions}>
+              <Pressable
+                onPress={() => navigation.navigate('Search')}
+                android_ripple={{ color: 'rgba(244,238,227,0.2)', borderless: true }}
+                style={styles.headerIconBtn}
+                accessibilityRole="button"
+                accessibilityLabel="Search chats"
+              >
+                <Icon source="magnify" size={22} color={brand.cream} />
+              </Pressable>
+              <Pressable
+                onPress={() => navigation.navigate('Bookmarks')}
+                android_ripple={{ color: 'rgba(244,238,227,0.2)', borderless: true }}
+                style={styles.headerIconBtn}
+                accessibilityRole="button"
+                accessibilityLabel="Saved answers"
+              >
+                <Icon source="bookmark-outline" size={22} color={brand.cream} />
+              </Pressable>
+              <LanguageSwitcher />
+            </View>
           </View>
           {sessions.length > 0 && (
             <View style={styles.statsRow}>
@@ -387,177 +442,187 @@ const styles = StyleSheet.create({
   rtl: { writingDirection: 'rtl', textAlign: 'right' },
   loading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
-  // Header
+  // Header - polished
   header: {
-    paddingTop: Platform.OS === 'ios' ? 56 : (StatusBar.currentHeight ?? 0) + 16,
-    paddingBottom: 22,
-    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'ios' ? 58 : (StatusBar.currentHeight ?? 0) + 18,
+    paddingBottom: 24,
+    paddingHorizontal: 22,
   },
-  headerInner: { gap: 18 },
+  headerInner: { gap: 20 },
   headerTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
+    gap: 14,
   },
-  headerBrandRow: { flexDirection: 'row', alignItems: 'center', gap: 14, flexShrink: 1 },
+  headerBrandRow: { flexDirection: 'row', alignItems: 'center', gap: 16, flexShrink: 1 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  headerIconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(244,238,227,0.12)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   headerBrandText: { flexShrink: 1 },
   headerBrandName: {
     color: brand.cream,
-    fontSize: 24,
-    fontWeight: '800',
-    letterSpacing: -0.3,
-    lineHeight: 28,
+    fontSize: 26,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+    lineHeight: 30,
   },
   headerBrandTag: {
-    color: 'rgba(244,238,227,0.62)',
+    color: 'rgba(244,238,227,0.6)',
     fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 2.2,
-    marginTop: 2,
+    fontWeight: '600',
+    letterSpacing: 1.8,
+    marginTop: 4,
   },
-  statsRow: { flexDirection: 'row', gap: 18 },
+  statsRow: { flexDirection: 'row', gap: 24 },
   statBox: { flex: 0 },
   statValue: {
     color: brand.cream,
-    fontSize: 22,
-    fontWeight: '800',
-    letterSpacing: -0.4,
+    fontSize: 24,
+    fontWeight: '700',
+    letterSpacing: -0.3,
   },
   statLabel: {
-    color: 'rgba(244,238,227,0.52)',
+    color: 'rgba(244,238,227,0.5)',
     fontSize: 10,
-    letterSpacing: 1.8,
-    fontWeight: '700',
-    marginTop: 2,
+    letterSpacing: 1.6,
+    fontWeight: '600',
+    marginTop: 3,
   },
 
-  // List
-  list: { padding: 16, paddingBottom: 120 },
-  itemGap: { height: 10 },
+  // List - cleaner cards
+  list: { padding: 18, paddingBottom: 120 },
+  itemGap: { height: 12 },
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: brand.paper,
-    borderRadius: 16,
-    paddingVertical: 14,
-    paddingLeft: 14,
-    paddingRight: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(7,32,63,0.06)',
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    paddingVertical: 16,
+    paddingLeft: 16,
+    paddingRight: 8,
+    shadowColor: brand.ink,
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
   },
-  cardLeft: { flex: 1, flexDirection: 'row', gap: 12, alignItems: 'center' },
+  cardLeft: { flex: 1, flexDirection: 'row', gap: 14, alignItems: 'center' },
   cardMark: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: 'rgba(20,60,108,0.07)',
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: 'rgba(20,60,108,0.06)',
     justifyContent: 'center', alignItems: 'center',
   },
-  cardText: { flex: 1, gap: 4 },
-  cardTitle: { color: brand.ink, fontSize: 15, fontWeight: '600', lineHeight: 20 },
-  cardMeta: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  cardText: { flex: 1, gap: 5 },
+  cardTitle: { color: brand.ink, fontSize: 16, fontWeight: '600', lineHeight: 22 },
+  cardMeta: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   cardMetaCount: {
     color: brand.indigo,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.4,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
-  cardMetaDot: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: brand.indigoSoft, opacity: 0.5 },
-  cardMetaText: { color: brand.indigoSoft, fontSize: 11, opacity: 0.78 },
+  cardMetaDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: brand.amber, opacity: 0.7 },
+  cardMetaText: { color: brand.indigoSoft, fontSize: 12, opacity: 0.8 },
 
-  cardDelete: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
-  cardDeleteIcon: { color: brand.indigoSoft, fontSize: 16, opacity: 0.55 },
+  cardDelete: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
+  cardDeleteIcon: { color: brand.indigoSoft, fontSize: 16, opacity: 0.5 },
 
-  // Empty state
+  // Empty state - cleaner visual hierarchy
   empty: {
     flex: 1,
-    paddingHorizontal: 28,
-    paddingTop: 48,
+    paddingHorizontal: 32,
+    paddingTop: 52,
     alignItems: 'center',
-    gap: 12,
+    gap: 14,
   },
   emptyMarkRing: {
-    width: 116,
-    height: 116,
-    borderRadius: 58,
-    backgroundColor: brand.paper,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(7,32,63,0.06)',
-    marginBottom: 4,
+    shadowColor: brand.ink,
+    shadowOpacity: 0.08,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 4,
+    marginBottom: 6,
   },
   eyebrow: {
-    color: brand.indigoSoft,
-    fontSize: 10,
+    color: brand.amber,
+    fontSize: 11,
     fontWeight: '700',
-    letterSpacing: 2.5,
-    marginTop: 4,
+    letterSpacing: 2,
+    marginTop: 6,
   },
   emptyHeadline: {
     color: brand.ink,
-    fontSize: 26,
-    fontWeight: '800',
-    letterSpacing: -0.5,
+    fontSize: 24,
+    fontWeight: '700',
     textAlign: 'center',
-    lineHeight: 32,
+    lineHeight: 30,
+    marginTop: 2,
   },
   emptyHint: {
     color: brand.indigoSoft,
-    fontSize: 14,
-    lineHeight: 22,
+    fontSize: 15,
+    lineHeight: 23,
     textAlign: 'center',
-    opacity: 0.85,
-    maxWidth: 320,
+    opacity: 0.9,
+    maxWidth: 300,
   },
   emptyCta: {
-    marginTop: 22,
+    marginTop: 28,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
     backgroundColor: brand.ink,
-    paddingVertical: 14,
-    paddingHorizontal: 22,
+    paddingVertical: 16,
+    paddingHorizontal: 26,
     borderRadius: 999,
     shadowColor: brand.ink,
     shadowOpacity: 0.25,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 4,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 5,
   },
   emptyCtaText: {
     color: brand.cream,
-    fontSize: 15,
-    fontWeight: '700',
-    letterSpacing: 0.2,
+    fontSize: 16,
+    fontWeight: '600',
+    letterSpacing: 0.3,
   },
-  emptyCtaArrow: { color: brand.amber, fontSize: 18, fontWeight: '700' },
+  emptyCtaArrow: { color: brand.amber, fontSize: 20, fontWeight: '600' },
 
-  // FAB
+  // FAB - more prominent
   fab: {
     position: 'absolute',
-    right: 18,
-    bottom: 24,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    right: 20,
+    bottom: 28,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: brand.ink,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: brand.ink,
-    shadowOpacity: 0.3,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 6,
+    shadowOpacity: 0.35,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
   },
-  fabIcon: { color: brand.cream, fontSize: 28, fontWeight: '300', lineHeight: 28 },
+  fabIcon: { color: brand.cream, fontSize: 32, fontWeight: '300', lineHeight: 32 },
 
   // Dialog
-  dialog: { borderRadius: 18, backgroundColor: brand.paper },
+  dialog: { borderRadius: 20, backgroundColor: '#FFFFFF' },
   dialogTitle: { color: brand.ink, fontWeight: '700' },
-  dialogBody: { color: brand.indigoSoft, fontSize: 14, lineHeight: 20 },
+  dialogBody: { color: brand.indigoSoft, fontSize: 15, lineHeight: 22 },
 });

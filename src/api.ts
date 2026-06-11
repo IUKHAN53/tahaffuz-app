@@ -247,3 +247,186 @@ export async function deleteChat(deviceId: string, chatId: number): Promise<void
 }
 
 export const API_BASE = apiBase;
+
+// Feedback API
+export type FeedbackRating = 'up' | 'down';
+
+export type FeedbackStats = {
+  up: number;
+  down: number;
+};
+
+export async function submitFeedback(params: {
+  messageId: number;
+  deviceId: string;
+  rating: FeedbackRating;
+  comment?: string;
+}): Promise<{ success: boolean; stats: FeedbackStats }> {
+  const res = await fetch(`${apiBase}/api/feedback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({
+      message_id: params.messageId,
+      device_id: params.deviceId,
+      rating: params.rating,
+      comment: params.comment,
+    }),
+  });
+  const json = await jsonOrThrow(res);
+  return { success: json.success, stats: json.data?.stats ?? { up: 0, down: 0 } };
+}
+
+export async function checkFeedback(
+  messageId: number,
+  deviceId: string
+): Promise<{ hasRated: boolean; rating?: FeedbackRating }> {
+  const res = await fetch(
+    `${apiBase}/api/feedback/${messageId}/check?device_id=${encodeURIComponent(deviceId)}`
+  );
+  const json = await jsonOrThrow(res);
+  return { hasRated: json.data?.has_rated ?? false, rating: json.data?.rating };
+}
+
+// Bookmark API
+export type Bookmark = {
+  id: number;
+  message_id: number;
+  device_id: string;
+  note: string | null;
+  created_at: string;
+  message?: {
+    id: number;
+    content: string;
+    chat?: { id: number; title: string };
+  };
+};
+
+export async function toggleBookmark(params: {
+  messageId: number;
+  deviceId: string;
+  note?: string;
+}): Promise<{ isBookmarked: boolean }> {
+  const res = await fetch(`${apiBase}/api/bookmarks/toggle`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({
+      message_id: params.messageId,
+      device_id: params.deviceId,
+      note: params.note,
+    }),
+  });
+  const json = await jsonOrThrow(res);
+  return { isBookmarked: json.data?.is_bookmarked ?? false };
+}
+
+export async function checkBookmark(
+  messageId: number,
+  deviceId: string
+): Promise<{ isBookmarked: boolean }> {
+  const res = await fetch(
+    `${apiBase}/api/bookmarks/${messageId}/check?device_id=${encodeURIComponent(deviceId)}`
+  );
+  const json = await jsonOrThrow(res);
+  return { isBookmarked: json.data?.is_bookmarked ?? false };
+}
+
+export async function listBookmarks(
+  deviceId: string,
+  page: number = 1
+): Promise<{ data: Bookmark[]; lastPage: number }> {
+  const res = await fetch(
+    `${apiBase}/api/bookmarks?device_id=${encodeURIComponent(deviceId)}&page=${page}`
+  );
+  const json = await jsonOrThrow(res);
+  return {
+    data: json.data?.data ?? [],
+    lastPage: json.data?.last_page ?? 1,
+  };
+}
+
+export async function deleteBookmark(bookmarkId: number, deviceId: string): Promise<void> {
+  const res = await fetch(
+    `${apiBase}/api/bookmarks/${bookmarkId}?device_id=${encodeURIComponent(deviceId)}`,
+    { method: 'DELETE' }
+  );
+  await jsonOrThrow(res);
+}
+
+// Search API
+export type SearchResult = {
+  id: number;
+  chat_id: number;
+  role: 'user' | 'assistant';
+  content: string;
+  created_at: string;
+  chat?: { id: number; title: string };
+};
+
+export async function searchMessages(
+  deviceId: string,
+  query: string
+): Promise<SearchResult[]> {
+  const res = await fetch(
+    `${apiBase}/api/search/messages?device_id=${encodeURIComponent(deviceId)}&query=${encodeURIComponent(query)}`
+  );
+  const json = await jsonOrThrow(res);
+  return json.data ?? [];
+}
+
+// Quick Answers (Offline Cache) API
+export type QuickAnswer = {
+  id: string;
+  question: string;
+  answer: string;
+  popularity: number;
+};
+
+export async function fetchQuickAnswers(
+  language: ReplyLanguage,
+  limit: number = 20
+): Promise<QuickAnswer[]> {
+  const res = await fetch(
+    `${apiBase}/api/quick-answers?language=${language}&limit=${limit}`
+  );
+  const json = await jsonOrThrow(res);
+  return json.data ?? [];
+}
+
+// Push Notification API
+export async function registerPushToken(params: {
+  deviceId: string;
+  token: string;
+  platform?: 'expo' | 'fcm' | 'apns';
+  language?: ReplyLanguage;
+}): Promise<{ success: boolean; tipsEnabled: boolean }> {
+  const res = await fetch(`${apiBase}/api/push/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({
+      device_id: params.deviceId,
+      token: params.token,
+      platform: params.platform ?? 'expo',
+      language: params.language ?? 'ur',
+    }),
+  });
+  const json = await jsonOrThrow(res);
+  return { success: json.success, tipsEnabled: json.data?.tips_enabled ?? true };
+}
+
+export async function updatePushPreferences(params: {
+  deviceId: string;
+  tipsEnabled: boolean;
+  language?: ReplyLanguage;
+}): Promise<{ success: boolean }> {
+  const res = await fetch(`${apiBase}/api/push/preferences`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({
+      device_id: params.deviceId,
+      tips_enabled: params.tipsEnabled,
+      language: params.language,
+    }),
+  });
+  const json = await jsonOrThrow(res);
+  return { success: json.success };
+}

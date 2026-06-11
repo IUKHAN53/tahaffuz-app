@@ -5,14 +5,13 @@ import {
   FlatList,
   Platform,
   Pressable,
+  Share,
   StatusBar,
   StyleSheet,
   View,
 } from 'react-native';
 import {
   Icon,
-  IconButton,
-  Menu,
   Snackbar,
   Text,
   TextInput,
@@ -22,18 +21,32 @@ import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Speech from 'expo-speech';
 import * as Clipboard from 'expo-clipboard';
+import Markdown from 'react-native-markdown-display';
 import {
   AudioModule,
   RecordingPresets,
   setAudioModeAsync,
-  useAudioPlayer,
   useAudioRecorder,
   useAudioRecorderState,
 } from 'expo-audio';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
-import { getChat, sendAudio, sendText, sendTextStream, ttsUrl, type ReplyLanguage } from '../api';
+import {
+  getChat,
+  sendAudio,
+  sendText,
+  sendTextStream,
+  submitFeedback,
+  toggleBookmark,
+  type ReplyLanguage,
+  type FeedbackRating,
+} from '../api';
 import { getDeviceId } from '../deviceId';
+import {
+  getCachedQuickAnswers,
+  refreshQuickAnswersCache,
+  searchQuickAnswers,
+} from '../offlineCache';
 import { upsertSession } from '../sessions';
 import { useLanguage } from '../language';
 import { brand, palette } from '../theme';
@@ -45,9 +58,12 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
 
 type Msg = {
   id: string;
+  serverId?: number; // Backend message ID for feedback/bookmarks
   role: 'user' | 'assistant';
   content: string;
   pending?: boolean;
+  feedback?: FeedbackRating; // User's feedback on this message
+  bookmarked?: boolean;
 };
 
 type Strings = {
@@ -55,7 +71,9 @@ type Strings = {
   eyebrow: string;
   greeting: string;
   greetingHint: string;
+  voicePrompt: string;
   suggestions: string[];
+  quickReplies: string[];
   placeholder: string;
   errorLoad: string;
   errorNet: string;
@@ -69,128 +87,182 @@ type Strings = {
   micHintStop: string;
   copied: string;
   retry: string;
+  helpfulHint: string;
+  notHelpfulHint: string;
+  saveHint: string;
+  offlineNote: string;
 };
 
 const COPY: Record<ReplyLanguage, Strings> = {
   en: {
     newChat: 'New chat',
-    eyebrow: 'TRAINING ASSISTANT',
-    greeting: 'How can I help today?',
-    greetingHint: 'Ask anything about vaccines, cold chain, or immunization sessions.',
+    eyebrow: 'YOUR VACCINE HELPER',
+    greeting: 'Hello! How can I help you today?',
+    greetingHint: 'I can answer questions about vaccines, cold chain, and immunization.',
+    voicePrompt: 'You can also tap the microphone to speak your question!',
     suggestions: [
-      'What temperature should the cold chain be?',
+      'What temperature should vaccines be stored at?',
       'When is the polio vaccine given?',
       'What does the BCG vaccine prevent?',
     ],
-    placeholder: 'Ask a question…',
-    errorLoad: 'Failed to load',
-    errorNet: 'Network error',
-    errorMic: 'Microphone failed',
-    errorNoAudio: 'No audio recorded',
-    errorVoice: 'Voice request failed',
-    voicePlaceholder: 'Voice message…',
+    quickReplies: [
+      'Tell me more',
+      'What are the side effects?',
+      'When should this be given?',
+    ],
+    placeholder: 'Type your question here...',
+    errorLoad: 'Could not load chat. Please try again.',
+    errorNet: 'No internet connection. Please check and try again.',
+    errorMic: 'Could not access microphone. Please allow microphone access.',
+    errorNoAudio: 'No audio was recorded. Please try again.',
+    errorVoice: 'Could not process voice. Please try typing instead.',
+    voicePlaceholder: 'Listening...',
     voiceTranscriptFallback: 'Voice message',
-    snackbarClose: 'Close',
-    micHint: 'Tap to record',
-    micHintStop: 'Tap to stop',
-    copied: 'Answer copied',
-    retry: 'Retry',
+    snackbarClose: 'OK',
+    micHint: 'Tap microphone to speak',
+    micHintStop: 'Tap to send your voice message',
+    copied: 'Answer copied!',
+    retry: 'Try Again',
+    helpfulHint: 'This helps us improve',
+    notHelpfulHint: 'We will do better',
+    saveHint: 'Saved for later',
+    offlineNote: 'You are offline — showing a saved answer.',
   },
   ur: {
     newChat: 'نیا چیٹ',
-    eyebrow: 'تربیتی معاون',
-    greeting: 'آج میں کیسے مدد کر سکتا ہوں؟',
-    greetingHint: 'ویکسی نیشن، کولڈ چین، یا حفاظتی ٹیکوں کے سیشن سے متعلق سوال پوچھیں۔',
+    eyebrow: 'آپ کا ویکسین ہیلپر',
+    greeting: 'السلام علیکم! میں آج آپ کی کیسے مدد کر سکتا ہوں؟',
+    greetingHint: 'میں ویکسین، کولڈ چین، اور حفاظتی ٹیکوں کے بارے میں سوالات کا جواب دے سکتا ہوں۔',
+    voicePrompt: 'آپ اپنا سوال بولنے کے لیے مائیکروفون بھی دبا سکتے ہیں!',
     suggestions: [
-      'کولڈ چین کا درجہ حرارت کتنا ہونا چاہیے؟',
+      'ویکسین کس درجہ حرارت پر رکھنی چاہیے؟',
       'پولیو ویکسین کب لگائی جاتی ہے؟',
       'BCG ویکسین کیا روکتی ہے؟',
     ],
-    placeholder: 'سوال یہاں لکھیں…',
-    errorLoad: 'لوڈ ناکام',
-    errorNet: 'نیٹ ورک کی خرابی',
-    errorMic: 'مائیک ناکام',
-    errorNoAudio: 'کوئی آڈیو ریکارڈ نہیں ہوئی',
-    errorVoice: 'آواز کی درخواست ناکام',
-    voicePlaceholder: 'آواز کا پیغام…',
+    quickReplies: [
+      'مزید بتائیں',
+      'اس کے ضمنی اثرات کیا ہیں؟',
+      'یہ کب دینی چاہیے؟',
+    ],
+    placeholder: 'اپنا سوال یہاں لکھیں...',
+    errorLoad: 'چیٹ لوڈ نہیں ہو سکی۔ براہ کرم دوبارہ کوشش کریں۔',
+    errorNet: 'انٹرنیٹ کنکشن نہیں۔ براہ کرم چیک کریں اور دوبارہ کوشش کریں۔',
+    errorMic: 'مائیکروفون استعمال نہیں ہو سکا۔ براہ کرم اجازت دیں۔',
+    errorNoAudio: 'کوئی آڈیو ریکارڈ نہیں ہوئی۔ براہ کرم دوبارہ کوشش کریں۔',
+    errorVoice: 'آواز پروسیس نہیں ہو سکی۔ براہ کرم لکھ کر بھیجیں۔',
+    voicePlaceholder: 'سن رہا ہوں...',
     voiceTranscriptFallback: 'آواز کا پیغام',
-    snackbarClose: 'بند',
-    micHint: 'ریکارڈ کرنے کے لیے دبائیں',
-    micHintStop: 'روکنے کے لیے دبائیں',
-    copied: 'جواب کاپی ہو گیا',
+    snackbarClose: 'ٹھیک ہے',
+    micHint: 'بولنے کے لیے مائیکروفون دبائیں',
+    micHintStop: 'آواز بھیجنے کے لیے دبائیں',
+    copied: 'جواب کاپی ہو گیا!',
     retry: 'دوبارہ کوشش',
+    helpfulHint: 'اس سے ہمیں بہتر ہونے میں مدد ملتی ہے',
+    notHelpfulHint: 'ہم بہتر کریں گے',
+    saveHint: 'بعد میں کے لیے محفوظ',
+    offlineNote: 'آپ آف لائن ہیں — محفوظ شدہ جواب دکھایا جا رہا ہے۔',
   },
   rud: {
     newChat: 'Naya chat',
-    eyebrow: 'TARBIYATI MUAVIN',
-    greeting: 'Aaj main kaise madad karoon?',
-    greetingHint: 'Vaccination, cold chain, ya immunization session ke baare mein sawal poochein.',
+    eyebrow: 'AAPKA VACCINE HELPER',
+    greeting: 'Assalam-o-Alaikum! Main aaj aapki kaise madad kar sakta hoon?',
+    greetingHint: 'Main vaccine, cold chain, aur immunization ke baare mein sawalon ka jawab de sakta hoon.',
+    voicePrompt: 'Aap apna sawal bolne ke liye mic bhi daba sakte hain!',
     suggestions: [
-      'Cold chain ka temperature kitna hona chahiye?',
+      'Vaccine kis temperature par rakhni chahiye?',
       'Polio vaccine kab lagai jati hai?',
       'BCG vaccine kya rokti hai?',
     ],
-    placeholder: 'Sawal yahan likhein…',
-    errorLoad: 'Load nakaam',
-    errorNet: 'Network ki kharabi',
-    errorMic: 'Mic nakaam',
-    errorNoAudio: 'Koi audio record nahi hui',
-    errorVoice: 'Awaaz ki darkhwast nakaam',
-    voicePlaceholder: 'Awaaz ka paigham…',
+    quickReplies: [
+      'Mazeed batayen',
+      'Iske side effects kya hain?',
+      'Ye kab deni chahiye?',
+    ],
+    placeholder: 'Apna sawal yahan likhein...',
+    errorLoad: 'Chat load nahi ho saki. Please dobara try karein.',
+    errorNet: 'Internet connection nahi hai. Please check karein.',
+    errorMic: 'Mic istemal nahi ho saka. Please permission dein.',
+    errorNoAudio: 'Koi audio record nahi hui. Dobara try karein.',
+    errorVoice: 'Awaaz process nahi ho saki. Please likh kar bhejein.',
+    voicePlaceholder: 'Sun raha hoon...',
     voiceTranscriptFallback: 'Awaaz ka paigham',
-    snackbarClose: 'Band karein',
-    micHint: 'Record karne ke liye tap karein',
-    micHintStop: 'Rokne ke liye tap karein',
-    copied: 'Jawab copy ho gaya',
-    retry: 'Dobaara koshish',
+    snackbarClose: 'Theek hai',
+    micHint: 'Bolne ke liye mic dabayein',
+    micHintStop: 'Awaaz bhejne ke liye dabayein',
+    copied: 'Jawab copy ho gaya!',
+    retry: 'Dobara koshish',
+    helpfulHint: 'Isse humein behtar hone mein madad milti hai',
+    notHelpfulHint: 'Hum behtar karenge',
+    saveHint: 'Baad mein ke liye save',
+    offlineNote: 'Aap offline hain — saved jawab dikhaya ja raha hai.',
   },
   ps: {
     newChat: 'نوې خبرې',
-    eyebrow: 'روزنې مرستندویه',
-    greeting: 'نن ورځ زه څنګه مرسته کولی شم؟',
-    greetingHint: 'د واکسینونو، کولډ چین، یا واکسینیشن سیشن په اړه پوښتنه وکړئ.',
+    eyebrow: 'ستاسو واکسین مرستندویه',
+    greeting: 'سلام! نن ورځ زه څنګه مرسته کولی شم؟',
+    greetingHint: 'زه د واکسینونو، کولډ چین، او واکسینیشن په اړه پوښتنو ته ځواب ورکولی شم.',
+    voicePrompt: 'تاسو کولی شئ خپله پوښتنه ووایاست - مایکروفون ټچ کړئ!',
     suggestions: [
-      'د کولډ چین تودوخه څومره وي؟',
+      'واکسین په کومه تودوخه کې ساتل شي؟',
       'د پولیو واکسین کله ورکول کیږي؟',
       'BCG واکسین څه مخنیوی کوي؟',
     ],
-    placeholder: 'پوښتنه ولیکئ…',
-    errorLoad: 'لوډ ناکام شو',
-    errorNet: 'د شبکې ستونزه',
-    errorMic: 'مایکروفون ناکام شو',
-    errorNoAudio: 'آډیو ریکارډ نه شو',
-    errorVoice: 'د غږ غوښتنه ناکامه شوه',
-    voicePlaceholder: 'غږیز پیغام…',
+    quickReplies: [
+      'نور راته ووایاست',
+      'د دې اغیزې څه دي؟',
+      'دا کله باید ورکړل شي؟',
+    ],
+    placeholder: 'خپله پوښتنه دلته ولیکئ...',
+    errorLoad: 'خبرې نه لوډ شوې۔ بیا هڅه وکړئ.',
+    errorNet: 'انټرنیټ نشته۔ وګورئ او بیا هڅه وکړئ.',
+    errorMic: 'مایکروفون نه کار کوي۔ اجازه ورکړئ.',
+    errorNoAudio: 'آډیو ریکارډ نه شو۔ بیا هڅه وکړئ.',
+    errorVoice: 'غږ پروسس نه شو۔ لیکلی پوښتنه وکړئ.',
+    voicePlaceholder: 'اورم...',
     voiceTranscriptFallback: 'غږیز پیغام',
-    snackbarClose: 'بند کړئ',
-    micHint: 'ریکارډ لپاره ټپ کړئ',
-    micHintStop: 'ودرولو لپاره ټپ کړئ',
-    copied: 'ځواب کاپي شو',
+    snackbarClose: 'سمه ده',
+    micHint: 'د ویلو لپاره مایکروفون ټچ کړئ',
+    micHintStop: 'غږ لیږلو لپاره ټچ کړئ',
+    copied: 'ځواب کاپي شو!',
     retry: 'بیا هڅه وکړئ',
+    helpfulHint: 'دا موږ سره مرسته کوي',
+    notHelpfulHint: 'موږ به ښه کړو',
+    saveHint: 'د وروسته لپاره خوندي شو',
+    offlineNote: 'تاسو آفلاین یاست — خوندي شوی ځواب ښودل کیږي.',
   },
   sd: {
     newChat: 'نئين چيٽ',
-    eyebrow: 'تربيتي معاون',
-    greeting: 'اڄ مان ڪيئن مدد ڪري سگهان ٿو؟',
-    greetingHint: 'ويڪسينيشن، ڪولڊ چين، يا حفاظتي ٽيڪن جي سيشن بابت سوال پڇو.',
+    eyebrow: 'توهان جو ويڪسين هيلپر',
+    greeting: 'السلام عليڪم! اڄ مان توهان جي ڪيئن مدد ڪري سگهان ٿو؟',
+    greetingHint: 'مان ويڪسين، ڪولڊ چين، ۽ واڪسينيشن بابت سوالن جا جواب ڏئي سگهان ٿو.',
+    voicePrompt: 'توهان پنهنجو سوال ٻولڻ لاءِ مائڪ به دٻائي سگهو ٿا!',
     suggestions: [
-      'ڪولڊ چين جو درجو ڪيترو هجڻ گهرجي؟',
+      'ويڪسين ڪهڙي درجي حرارت تي رکڻ گهرجي؟',
       'پوليو ويڪسين ڪڏهن ڏني ويندي آهي؟',
       'BCG ويڪسين ڇا روڪيندي آهي؟',
     ],
-    placeholder: 'سوال هتي لکو…',
-    errorLoad: 'لوڊ ناڪام',
-    errorNet: 'نيٽ ورڪ جي خرابي',
-    errorMic: 'مائڪ ناڪام',
-    errorNoAudio: 'ڪا آڊيو رڪارڊ نه ٿي',
-    errorVoice: 'آواز جي درخواست ناڪام',
-    voicePlaceholder: 'آواز جو پيغام…',
+    quickReplies: [
+      'وڌيڪ ٻڌايو',
+      'هن جا ضمني اثر ڇا آهن؟',
+      'هي ڪڏهن ڏني وڃي؟',
+    ],
+    placeholder: 'پنهنجو سوال هتي لکو...',
+    errorLoad: 'چيٽ لوڊ نه ٿي سگهي۔ ٻيهر ڪوشش ڪريو.',
+    errorNet: 'انٽرنيٽ ڪنيڪشن نه آهي۔ چيڪ ڪريو ۽ ٻيهر ڪوشش ڪريو.',
+    errorMic: 'مائڪ استعمال نه ٿي سگهيو۔ اجازت ڏيو.',
+    errorNoAudio: 'ڪا آڊيو رڪارڊ نه ٿي۔ ٻيهر ڪوشش ڪريو.',
+    errorVoice: 'آواز پروسيس نه ٿي سگهي۔ لکي موڪليو.',
+    voicePlaceholder: 'ٻڌي رهيو آهيان...',
     voiceTranscriptFallback: 'آواز جو پيغام',
-    snackbarClose: 'بند ڪريو',
-    micHint: 'رڪارڊ ڪرڻ لاءِ ٽيپ ڪريو',
-    micHintStop: 'روڪڻ لاءِ ٽيپ ڪريو',
-    copied: 'جواب ڪاپي ٿي ويو',
+    snackbarClose: 'ٺيڪ آهي',
+    micHint: 'ٻولڻ لاءِ مائڪ دٻايو',
+    micHintStop: 'آواز موڪلڻ لاءِ دٻايو',
+    copied: 'جواب ڪاپي ٿي ويو!',
     retry: 'ٻيهر ڪوشش',
+    helpfulHint: 'اهو اسان کي بهتر ٿيڻ ۾ مدد ڪري ٿو',
+    notHelpfulHint: 'اسان بهتر ڪنداسين',
+    saveHint: 'پوءِ لاءِ محفوظ',
+    offlineNote: 'توهان آف لائين آهيو — محفوظ جواب ڏيکاريو پيو وڃي.',
   },
 };
 
@@ -208,20 +280,54 @@ const isPlaceholderTitleText = (t: string) =>
   t === COPY.en.newChat || t === COPY.ur.newChat || t === COPY.rud.newChat ||
   t === COPY.ps.newChat || t === COPY.sd.newChat;
 
+// Markdown styles for bot messages (LTR)
+const mdStylesBot = {
+  body: { color: palette.botBubbleText, fontSize: 16, lineHeight: 25 },
+  paragraph: { marginTop: 0, marginBottom: 10 },
+  heading1: { fontSize: 19, fontWeight: '700' as const, marginBottom: 10, marginTop: 4, color: brand.ink },
+  heading2: { fontSize: 17, fontWeight: '700' as const, marginBottom: 8, marginTop: 2, color: brand.ink },
+  heading3: { fontSize: 16, fontWeight: '600' as const, marginBottom: 6, color: brand.ink },
+  bullet_list: { marginBottom: 10, marginTop: 4 },
+  ordered_list: { marginBottom: 10, marginTop: 4 },
+  list_item: { marginBottom: 6 },
+  strong: { fontWeight: '700' as const, color: brand.ink },
+  em: { fontStyle: 'italic' as const },
+  code_inline: { backgroundColor: 'rgba(7,32,63,0.07)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 14 },
+  fence: { backgroundColor: 'rgba(7,32,63,0.05)', padding: 12, borderRadius: 10, marginVertical: 10 },
+  code_block: { fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 14 },
+  blockquote: { borderLeftWidth: 3, borderLeftColor: brand.amber, paddingLeft: 12, marginVertical: 10, opacity: 0.95 },
+};
+
+// Markdown styles for bot messages (RTL - Urdu, Pashto, Sindhi)
+const mdStylesBotRtl = {
+  ...mdStylesBot,
+  body: { ...mdStylesBot.body, writingDirection: 'rtl' as const, textAlign: 'right' as const },
+  paragraph: { ...mdStylesBot.paragraph, writingDirection: 'rtl' as const, textAlign: 'right' as const },
+  list_item: { ...mdStylesBot.list_item, writingDirection: 'rtl' as const },
+  blockquote: { ...mdStylesBot.blockquote, borderLeftWidth: 0, borderRightWidth: 3, borderRightColor: brand.amber, paddingLeft: 0, paddingRight: 12 },
+};
+
 /** A single chat bubble — memoized so streaming only re-renders the live message. */
 const MessageBubble = memo(function MessageBubble({
   item,
   isRtl,
   onCopy,
   onSpeak,
+  onFeedback,
+  onBookmark,
+  onShare,
 }: {
   item: Msg;
   isRtl: boolean;
   onCopy: (text: string) => void;
   onSpeak: (text: string) => void;
+  onFeedback: (msg: Msg, rating: FeedbackRating) => void;
+  onBookmark: (msg: Msg) => void;
+  onShare: (text: string) => void;
 }) {
   const isUser = item.role === 'user';
   const canPlay = !item.pending && item.content.trim().length > 0;
+  const canInteract = !item.pending && item.serverId && !isUser;
 
   return (
     <View style={[styles.row, isUser ? styles.rowRight : styles.rowLeft]}>
@@ -252,17 +358,19 @@ const MessageBubble = memo(function MessageBubble({
               <View style={styles.pendingRow}>
                 <TypingDots size={6} color={brand.amber} />
               </View>
-            ) : (
+            ) : isUser ? (
               <Text
                 selectable
                 style={[
                   styles.bubbleText,
-                  { color: isUser ? palette.userBubbleText : palette.botBubbleText },
+                  { color: palette.userBubbleText },
                   isRtl ? styles.rtl : null,
                 ]}
               >
                 {item.content}
               </Text>
+            ) : (
+              <Markdown style={isRtl ? mdStylesBotRtl : mdStylesBot}>{item.content}</Markdown>
             )}
           </Pressable>
           {/* Play button on the right for user messages */}
@@ -276,6 +384,62 @@ const MessageBubble = memo(function MessageBubble({
             </Pressable>
           )}
         </View>
+        {/* Feedback & Bookmark actions for assistant messages */}
+        {canInteract && (
+          <View style={styles.msgActions}>
+            <Pressable
+              onPress={() => onFeedback(item, 'up')}
+              style={({ pressed }) => [
+                styles.actionBtn,
+                item.feedback === 'up' && styles.actionBtnActive,
+                pressed && { opacity: 0.7 },
+              ]}
+            >
+              <Icon
+                source={item.feedback === 'up' ? 'thumb-up' : 'thumb-up-outline'}
+                size={16}
+                color={item.feedback === 'up' ? brand.indigo : 'rgba(7,32,63,0.5)'}
+              />
+            </Pressable>
+            <Pressable
+              onPress={() => onFeedback(item, 'down')}
+              style={({ pressed }) => [
+                styles.actionBtn,
+                item.feedback === 'down' && styles.actionBtnActive,
+                pressed && { opacity: 0.7 },
+              ]}
+            >
+              <Icon
+                source={item.feedback === 'down' ? 'thumb-down' : 'thumb-down-outline'}
+                size={16}
+                color={item.feedback === 'down' ? '#B3261E' : 'rgba(7,32,63,0.5)'}
+              />
+            </Pressable>
+            <Pressable
+              onPress={() => onBookmark(item)}
+              style={({ pressed }) => [
+                styles.actionBtn,
+                item.bookmarked && styles.actionBtnActive,
+                pressed && { opacity: 0.7 },
+              ]}
+            >
+              <Icon
+                source={item.bookmarked ? 'bookmark' : 'bookmark-outline'}
+                size={16}
+                color={item.bookmarked ? brand.amber : 'rgba(7,32,63,0.5)'}
+              />
+            </Pressable>
+            <Pressable
+              onPress={() => onShare(item.content)}
+              style={({ pressed }) => [
+                styles.actionBtn,
+                pressed && { opacity: 0.7 },
+              ]}
+            >
+              <Icon source="share-variant-outline" size={16} color="rgba(7,32,63,0.5)" />
+            </Pressable>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -283,14 +447,13 @@ const MessageBubble = memo(function MessageBubble({
 
 export default function ChatScreen({ route, navigation }: Props) {
   const theme = useTheme();
-  const { language, setLanguage } = useLanguage();
+  const { language } = useLanguage();
   const strings = COPY[language];
   const isRtl = language === 'ur' || language === 'ps' || language === 'sd';
   const initialChatId = route.params?.chatId ?? null;
 
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [chatId, setChatId] = useState<number | null>(initialChatId);
-  const [langMenuOpen, setLangMenuOpen] = useState(false);
   const [chatTitle, setChatTitle] = useState<string>(strings.newChat);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
@@ -305,12 +468,17 @@ export default function ChatScreen({ route, navigation }: Props) {
   const messagesRef = useRef<Msg[]>([]);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder);
-  const ttsPlayer = useAudioPlayer(null);
   const recordingPulse = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+
+  // Keep a local stash of popular Q&A pairs so common questions still get an
+  // answer when the device has no connection. Never throws.
+  useEffect(() => {
+    refreshQuickAnswersCache(language);
+  }, [language]);
 
   useEffect(() => {
     if (recorderState.isRecording) {
@@ -344,6 +512,7 @@ export default function ChatScreen({ route, navigation }: Props) {
           setMessages(
             detail.messages.map((m) => ({
               id: `s${m.id}`,
+              serverId: m.id,
               role: m.role === 'system' ? 'assistant' : (m.role as 'user' | 'assistant'),
               content: m.content,
             })),
@@ -359,9 +528,6 @@ export default function ChatScreen({ route, navigation }: Props) {
     })();
     return () => {
       Speech.stop();
-      try {
-        ttsPlayer.pause();
-      } catch {}
     };
   }, [initialChatId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -371,34 +537,85 @@ export default function ChatScreen({ route, navigation }: Props) {
 
   const stopSpeaking = useCallback(() => {
     Speech.stop();
-    try {
-      ttsPlayer.pause();
-    } catch {}
-  }, [ttsPlayer]);
+  }, []);
 
+  // Track spoken text to avoid re-speaking during streaming
+  const spokenTextRef = useRef('');
+  const speakQueueRef = useRef<string[]>([]);
+  const isSpeakingRef = useRef(false);
+
+  // Process the speech queue sequentially
+  const processQueue = useCallback(async () => {
+    if (isSpeakingRef.current || speakQueueRef.current.length === 0 || muted) return;
+    isSpeakingRef.current = true;
+    const sentence = speakQueueRef.current.shift();
+    if (sentence) {
+      await new Promise<void>((resolve) => {
+        Speech.speak(sentence, {
+          language: TTS_LANG[language],
+          pitch: 1.0,
+          rate: 1.05,
+          onDone: () => resolve(),
+          onError: () => resolve(),
+          onStopped: () => resolve(),
+        });
+      });
+    }
+    isSpeakingRef.current = false;
+    // Process next in queue
+    if (speakQueueRef.current.length > 0) {
+      processQueue();
+    }
+  }, [language, muted]);
+
+  // Speak full text (for manual play button or final speak)
   const speak = useCallback(
     async (text: string) => {
       if (muted || !text.trim()) return;
       stopSpeaking();
-      const url = ttsUrl(text, language);
-      try {
-        // Validate the synthesis succeeded before handing the URL to the player
-        // so a server/quota failure cleanly falls back to the on-device voice
-        // instead of playing silence. The backend caches the WAV, so the
-        // player's subsequent stream of the same URL is a cheap cache hit.
-        const res = await fetch(url);
-        if (!res.ok) throw new Error('tts unavailable');
-        // Route audio to the loudspeaker — leaving the session in recording
-        // mode can otherwise pin playback to the earpiece on Android.
-        await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
-        ttsPlayer.replace({ uri: url });
-        ttsPlayer.play();
-      } catch {
-        Speech.speak(text, { language: TTS_LANG[language], pitch: 1.0, rate: 0.95 });
+      speakQueueRef.current = [];
+      isSpeakingRef.current = false;
+      Speech.speak(text, { language: TTS_LANG[language], pitch: 1.0, rate: 1.05 });
+    },
+    [language, muted, stopSpeaking],
+  );
+
+  // Progressive speak: queue new sentences as they stream in
+  const speakProgressive = useCallback(
+    (fullText: string) => {
+      if (muted || !fullText.trim()) return;
+      const alreadySpoken = spokenTextRef.current;
+      const newText = fullText.slice(alreadySpoken.length);
+      if (!newText) return;
+
+      // Find complete sentences in new text (end with . ! ? or Urdu markers)
+      const sentenceEnders = /([.!?۔؟])\s*/g;
+      let match: RegExpExecArray | null;
+      let lastEnd = 0;
+
+      while ((match = sentenceEnders.exec(newText)) !== null) {
+        const sentence = newText.slice(lastEnd, match.index + 1).trim();
+        if (sentence.length > 3) {
+          speakQueueRef.current.push(sentence);
+        }
+        lastEnd = match.index + match[0].length;
+      }
+
+      // Update spoken reference to include complete sentences
+      if (lastEnd > 0) {
+        spokenTextRef.current = alreadySpoken + newText.slice(0, lastEnd);
+        processQueue();
       }
     },
-    [language, muted, stopSpeaking, ttsPlayer],
+    [muted, processQueue],
   );
+
+  // Reset progressive speech state for new message
+  const resetProgressiveSpeech = useCallback(() => {
+    spokenTextRef.current = '';
+    speakQueueRef.current = [];
+    isSpeakingRef.current = false;
+  }, []);
 
   const persistSession = useCallback(
     (id: number, title: string) => {
@@ -420,6 +637,42 @@ export default function ChatScreen({ route, navigation }: Props) {
     } catch {}
   }, []);
 
+  const handleFeedback = useCallback(
+    async (msg: Msg, rating: FeedbackRating) => {
+      if (!deviceId || !msg.serverId || msg.feedback) return;
+      try {
+        await submitFeedback({ messageId: msg.serverId, deviceId, rating });
+        setMessages((m) =>
+          m.map((x) => (x.id === msg.id ? { ...x, feedback: rating } : x))
+        );
+      } catch {}
+    },
+    [deviceId]
+  );
+
+  const handleBookmark = useCallback(
+    async (msg: Msg) => {
+      if (!deviceId || !msg.serverId) return;
+      try {
+        const res = await toggleBookmark({ messageId: msg.serverId, deviceId });
+        setMessages((m) =>
+          m.map((x) => (x.id === msg.id ? { ...x, bookmarked: res.isBookmarked } : x))
+        );
+      } catch {}
+    },
+    [deviceId]
+  );
+
+  const handleShare = useCallback(async (text: string) => {
+    if (!text.trim()) return;
+    try {
+      await Share.share({
+        message: text,
+        title: 'Tahaffuz',
+      });
+    } catch {}
+  }, []);
+
   const sendTextMessage = useCallback(
     async (retryOf?: string) => {
       const text = (retryOf ?? input).trim();
@@ -427,6 +680,8 @@ export default function ChatScreen({ route, navigation }: Props) {
       if (!retryOf) setInput('');
       setError(null);
       setRetryText(null);
+      stopSpeaking();
+      resetProgressiveSpeech();
 
       const placeholderId = `p${Date.now()}`;
       const userMsg: Msg = { id: `u${Date.now()}`, role: 'user', content: text };
@@ -439,10 +694,11 @@ export default function ChatScreen({ route, navigation }: Props) {
       const titleForCache = freshTitle ? text.slice(0, 60) : chatTitle;
       scroll();
 
-      const applyFinal = (content: string) =>
-        setMessages((m) => m.map((x) => (x.id === placeholderId ? { ...x, pending: false, content } : x)));
+      const applyFinal = (content: string, serverId?: number) =>
+        setMessages((m) => m.map((x) => (x.id === placeholderId ? { ...x, pending: false, content, serverId } : x)));
 
       let sawDelta = false;
+      let accumulatedText = '';
       try {
         const res = await sendTextStream(
           { deviceId, message: text, chatId, language },
@@ -450,19 +706,27 @@ export default function ChatScreen({ route, navigation }: Props) {
             onMeta: (id) => setChatId(id),
             onDelta: (delta) => {
               sawDelta = true;
+              accumulatedText += delta;
               setMessages((m) =>
                 m.map((x) =>
                   x.id === placeholderId ? { ...x, pending: false, content: x.content + delta } : x,
                 ),
               );
+              // Progressive TTS: speak sentences as they complete
+              speakProgressive(accumulatedText);
               scroll();
             },
           },
         );
         setChatId(res.chat_id);
-        applyFinal(res.reply.content);
+        applyFinal(res.reply.content, res.reply.id);
         persistSession(res.chat_id, titleForCache);
-        speak(res.reply.content);
+        // Speak any remaining text that wasn't a complete sentence
+        const remaining = res.reply.content.slice(spokenTextRef.current.length).trim();
+        if (remaining) {
+          speakQueueRef.current.push(remaining);
+          processQueue();
+        }
       } catch (streamErr: any) {
         if (sawDelta) {
           setError(streamErr?.message ?? strings.errorNet);
@@ -472,13 +736,22 @@ export default function ChatScreen({ route, navigation }: Props) {
           try {
             const res = await sendText({ deviceId, message: text, chatId, language });
             setChatId(res.chat_id);
-            applyFinal(res.reply.content);
+            applyFinal(res.reply.content, res.reply.id);
             persistSession(res.chat_id, titleForCache);
             speak(res.reply.content);
           } catch (e: any) {
-            setMessages((m) => m.filter((x) => x.id !== placeholderId));
-            setError(e?.message ?? strings.errorNet);
-            setRetryText(text);
+            // Last resort: answer from the offline quick-answers cache.
+            const cached = await getCachedQuickAnswers();
+            const hit = cached ? searchQuickAnswers(text, cached.answers) : null;
+            if (hit) {
+              applyFinal(hit.answer);
+              setError(strings.offlineNote);
+              speak(hit.answer);
+            } else {
+              setMessages((m) => m.filter((x) => x.id !== placeholderId));
+              setError(e?.message ?? strings.errorNet);
+              setRetryText(text);
+            }
           }
         }
       } finally {
@@ -486,7 +759,7 @@ export default function ChatScreen({ route, navigation }: Props) {
         scroll();
       }
     },
-    [busy, chatId, chatTitle, deviceId, input, language, persistSession, scroll, speak, strings.errorNet],
+    [busy, chatId, chatTitle, deviceId, input, language, persistSession, processQueue, resetProgressiveSpeech, scroll, speak, speakProgressive, stopSpeaking, strings.errorNet, strings.offlineNote],
   );
 
   const startRecording = useCallback(async () => {
@@ -533,7 +806,7 @@ export default function ChatScreen({ route, navigation }: Props) {
       setMessages((m) =>
         m.map((x) => {
           if (x.id === userId) return { ...x, pending: false, content: transcript };
-          if (x.id === placeholderId) return { ...x, pending: false, content: res.reply.content };
+          if (x.id === placeholderId) return { ...x, pending: false, content: res.reply.content, serverId: res.reply.id };
           return x;
         }),
       );
@@ -558,41 +831,103 @@ export default function ChatScreen({ route, navigation }: Props) {
 
   const renderItem = useCallback(
     ({ item }: { item: Msg }) => (
-      <MessageBubble item={item} isRtl={isRtl} onCopy={copyMessage} onSpeak={speak} />
+      <MessageBubble
+        item={item}
+        isRtl={isRtl}
+        onCopy={copyMessage}
+        onSpeak={speak}
+        onFeedback={handleFeedback}
+        onBookmark={handleBookmark}
+        onShare={handleShare}
+      />
     ),
-    [isRtl, copyMessage, speak],
+    [isRtl, copyMessage, speak, handleFeedback, handleBookmark, handleShare],
   );
 
   const empty = useMemo(
     () => (
       <View style={styles.emptyChat}>
         <View style={styles.emptyMarkRing}>
-          <BrandMark size={84} />
+          <BrandMark size={72} />
         </View>
         <Text style={styles.eyebrow}>{strings.eyebrow}</Text>
         <Text style={[styles.emptyHeadline, isRtl ? styles.rtl : null]}>{strings.greeting}</Text>
         <Text style={[styles.emptyHint, isRtl ? styles.rtl : null]}>{strings.greetingHint}</Text>
+
+        {/* Voice prompt with mic icon */}
+        <View style={styles.voicePromptContainer}>
+          <Text style={styles.voicePromptIcon}>🎤</Text>
+          <Text style={[styles.voicePromptText, isRtl ? styles.rtl : null]}>{strings.voicePrompt}</Text>
+        </View>
+
+        <Text style={[styles.suggestionsLabel, isRtl ? styles.rtl : null]}>
+          {language === 'en' ? 'Try asking:' : language === 'ur' ? 'یہ پوچھیں:' : language === 'rud' ? 'Ye poochein:' : language === 'ps' ? 'دا وپوښتئ:' : 'هي پڇو:'}
+        </Text>
         <View style={styles.suggestions}>
-          {strings.suggestions.map((q) => (
+          {strings.suggestions.map((q, index) => (
             <Pressable
               key={q}
-              onPress={() => setInput(q)}
+              onPress={() => {
+                setInput(q);
+                // Auto-send after setting input
+                setTimeout(() => sendTextMessage(q), 150);
+              }}
               android_ripple={{ color: 'rgba(7,32,63,0.08)' }}
               style={({ pressed }) => [styles.suggestionCard, pressed && { opacity: 0.85 }]}
+              accessibilityRole="button"
+              accessibilityLabel={q}
+              accessibilityHint="Tap to ask this question"
             >
-              <View style={styles.suggestionBullet} />
+              <View style={[styles.suggestionNumber, { backgroundColor: index === 0 ? brand.amber : index === 1 ? brand.indigo : brand.indigoSoft }]}>
+                <Text style={styles.suggestionNumberText}>{index + 1}</Text>
+              </View>
               <Text style={[styles.suggestionText, isRtl ? styles.rtl : null]} numberOfLines={2}>
                 {q}
               </Text>
+              <Text style={styles.suggestionArrow}>→</Text>
             </Pressable>
           ))}
         </View>
       </View>
     ),
-    [isRtl, strings.eyebrow, strings.greeting, strings.greetingHint, strings.suggestions],
+    [isRtl, language, sendTextMessage, strings.eyebrow, strings.greeting, strings.greetingHint, strings.suggestions, strings.voicePrompt],
   );
 
   const hasInput = input.trim().length > 0;
+
+  // Show quick replies after the last assistant message if not busy
+  const showQuickReplies = useMemo(() => {
+    if (busy || messages.length === 0) return false;
+    const lastMsg = messages[messages.length - 1];
+    return lastMsg.role === 'assistant' && !lastMsg.pending;
+  }, [busy, messages]);
+
+  const handleQuickReply = useCallback((q: string) => {
+    setInput(q);
+    // Auto-send after a short delay
+    setTimeout(() => sendTextMessage(q), 100);
+  }, [sendTextMessage]);
+
+  const quickRepliesFooter = useMemo(
+    () =>
+      showQuickReplies ? (
+        <View style={styles.quickReplies}>
+          {strings.quickReplies.map((q) => (
+            <Pressable
+              key={q}
+              onPress={() => handleQuickReply(q)}
+              android_ripple={{ color: 'rgba(7,32,63,0.08)' }}
+              style={({ pressed }) => [styles.quickReplyChip, pressed && { opacity: 0.85 }]}
+            >
+              <Text style={[styles.quickReplyText, isRtl ? styles.rtl : null]} numberOfLines={1}>
+                {q}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null,
+    [showQuickReplies, strings.quickReplies, isRtl, handleQuickReply]
+  );
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -605,92 +940,33 @@ export default function ChatScreen({ route, navigation }: Props) {
         style={styles.header}
       >
         <View style={styles.headerRow}>
-          <IconButton
-            icon="arrow-left"
-            iconColor={brand.cream}
-            size={22}
+          <Pressable
             onPress={() => navigation.goBack()}
-            style={styles.headerIcon}
-          />
+            android_ripple={{ color: 'rgba(244,238,227,0.2)', borderless: true }}
+            style={styles.headerBackBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
+            <Icon source="arrow-left" size={24} color={brand.cream} />
+          </Pressable>
           <View style={styles.headerCenter}>
             <View style={styles.headerBrand}>
-              <BrandMark size={22} />
+              <BrandMark size={24} />
               <Text style={styles.headerBrandText}>Tahaffuz</Text>
             </View>
-            <Text style={[styles.headerSubtitle, isRtl ? styles.rtl : null]} numberOfLines={1}>
-              {chatTitle}
-            </Text>
           </View>
-          <Menu
-            visible={langMenuOpen}
-            onDismiss={() => setLangMenuOpen(false)}
-            contentStyle={styles.menuContent}
-            anchor={
-              <IconButton
-                icon="translate"
-                iconColor={brand.cream}
-                size={22}
-                onPress={() => setLangMenuOpen(true)}
-                style={styles.headerIcon}
-              />
-            }
-          >
-            <Menu.Item
-              title="English"
-              leadingIcon={language === 'en' ? 'check' : undefined}
-              onPress={() => {
-                setLanguage('en');
-                setLangMenuOpen(false);
-                stopSpeaking();
-              }}
-            />
-            <Menu.Item
-              title="اردو"
-              leadingIcon={language === 'ur' ? 'check' : undefined}
-              onPress={() => {
-                setLanguage('ur');
-                setLangMenuOpen(false);
-                stopSpeaking();
-              }}
-            />
-            <Menu.Item
-              title="Roman Urdu"
-              leadingIcon={language === 'rud' ? 'check' : undefined}
-              onPress={() => {
-                setLanguage('rud');
-                setLangMenuOpen(false);
-                stopSpeaking();
-              }}
-            />
-            <Menu.Item
-              title="پښتو"
-              leadingIcon={language === 'ps' ? 'check' : undefined}
-              onPress={() => {
-                setLanguage('ps');
-                setLangMenuOpen(false);
-                stopSpeaking();
-              }}
-            />
-            <Menu.Item
-              title="سنڌي"
-              leadingIcon={language === 'sd' ? 'check' : undefined}
-              onPress={() => {
-                setLanguage('sd');
-                setLangMenuOpen(false);
-                stopSpeaking();
-              }}
-            />
-          </Menu>
-          <IconButton
-            icon={muted ? 'volume-off' : 'volume-high'}
-            iconColor={brand.cream}
-            size={22}
+          <Pressable
             onPress={() => {
               setMuted((m) => !m);
               stopSpeaking();
             }}
-            style={styles.headerIcon}
-          />
+            android_ripple={{ color: 'rgba(244,238,227,0.2)', borderless: true }}
+            style={[styles.headerMuteBtn, muted && styles.headerMuteBtnActive]}
+            accessibilityRole="button"
+            accessibilityLabel={muted ? 'Unmute audio' : 'Mute audio'}
+          >
+            <Text style={styles.headerMuteIcon}>{muted ? '🔇' : '🔊'}</Text>
+          </Pressable>
         </View>
       </LinearGradient>
 
@@ -707,6 +983,7 @@ export default function ChatScreen({ route, navigation }: Props) {
             renderItem={renderItem}
             contentContainerStyle={messages.length ? styles.list : styles.listEmpty}
             ListEmptyComponent={empty}
+            ListFooterComponent={quickRepliesFooter}
             onContentSizeChange={scroll}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
@@ -743,33 +1020,43 @@ export default function ChatScreen({ route, navigation }: Props) {
                     busy && { opacity: 0.5 },
                     pressed && { opacity: 0.85 },
                   ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Send message"
                 >
-                  <Icon source="arrow-up" size={22} color={brand.cream} />
+                  <Icon source="arrow-up" size={24} color={brand.cream} />
                 </Pressable>
               ) : (
                 <Animated.View style={{ transform: [{ scale: recordingPulse }] }}>
                   <Pressable
                     onPress={toggleRecording}
                     disabled={busy && !recorderState.isRecording}
-                    android_ripple={{ color: 'rgba(224,162,74,0.25)' }}
+                    android_ripple={{ color: recorderState.isRecording ? 'rgba(255,255,255,0.25)' : 'rgba(224,162,74,0.25)' }}
                     style={({ pressed }) => [
                       styles.micBtn,
                       recorderState.isRecording && styles.micBtnActive,
                       pressed && { opacity: 0.9 },
                     ]}
+                    accessibilityRole="button"
+                    accessibilityLabel={recorderState.isRecording ? 'Stop recording and send' : 'Record voice message'}
                   >
-                    <Icon
-                      source={recorderState.isRecording ? 'stop' : 'microphone'}
-                      size={22}
-                      color={recorderState.isRecording ? brand.cream : brand.ink}
-                    />
+                    <Text style={styles.micBtnIcon}>
+                      {recorderState.isRecording ? '⬛' : '🎤'}
+                    </Text>
                   </Pressable>
                 </Animated.View>
               )}
             </View>
-            <Text style={styles.composerHint}>
-              {recorderState.isRecording ? `●  ${strings.micHintStop}` : strings.micHint}
-            </Text>
+            {/* Voice recording hint with better visual feedback */}
+            <View style={styles.composerHintRow}>
+              {recorderState.isRecording ? (
+                <>
+                  <View style={styles.recordingIndicator} />
+                  <Text style={styles.composerHintRecording}>{strings.micHintStop}</Text>
+                </>
+              ) : (
+                <Text style={styles.composerHint}>{strings.micHint}</Text>
+              )}
+            </View>
           </View>
         </KeyboardAvoidingView>
       )}
@@ -811,206 +1098,332 @@ const styles = StyleSheet.create({
   rtl: { writingDirection: 'rtl', textAlign: 'right' },
   loading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
-  // Header
+  // Header - clean and simple
   header: {
-    paddingTop: Platform.OS === 'ios' ? 50 : (StatusBar.currentHeight ?? 0) + 6,
-    paddingBottom: 14,
-    paddingHorizontal: 4,
+    paddingTop: Platform.OS === 'ios' ? 56 : (StatusBar.currentHeight ?? 0) + 12,
+    paddingBottom: 18,
+    paddingHorizontal: 16,
   },
-  headerRow: { flexDirection: 'row', alignItems: 'center' },
-  headerIcon: { margin: 0 },
-  headerCenter: { flex: 1, alignItems: 'center', paddingHorizontal: 4 },
-  headerBrand: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  headerBrandText: {
-    color: brand.cream,
-    fontSize: 17,
-    fontWeight: '800',
-    letterSpacing: -0.2,
-  },
-  headerSubtitle: {
-    color: 'rgba(244,238,227,0.72)',
-    fontSize: 11,
-    marginTop: 2,
-    letterSpacing: 0.3,
-  },
-  menuContent: { borderRadius: 14, marginTop: 4 },
-
-  // List
-  list: { padding: 14, paddingBottom: 16 },
-  listEmpty: { flex: 1, justifyContent: 'center', padding: 24 },
-
-  // Empty state
-  emptyChat: { alignItems: 'center', gap: 10 },
-  emptyMarkRing: {
-    width: 116,
-    height: 116,
-    borderRadius: 58,
-    backgroundColor: brand.paper,
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  headerBackBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(244,238,227,0.12)',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(7,32,63,0.06)',
-    marginBottom: 6,
+  },
+  headerCenter: { flex: 1, alignItems: 'center' },
+  headerBrand: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  headerBrandText: {
+    color: brand.cream,
+    fontSize: 20,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  headerMuteBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(244,238,227,0.12)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerMuteBtnActive: {
+    backgroundColor: 'rgba(179,38,30,0.3)',
+  },
+  headerMuteIcon: {
+    fontSize: 20,
+  },
+
+  // List - improved padding
+  list: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 20 },
+  listEmpty: { flex: 1, justifyContent: 'center', paddingHorizontal: 28, paddingBottom: 40 },
+
+  // Empty state - cleaner visual hierarchy
+  emptyChat: { alignItems: 'center', gap: 12 },
+  emptyMarkRing: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: brand.ink,
+    shadowOpacity: 0.08,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 4,
+    marginBottom: 8,
   },
   eyebrow: {
-    color: brand.indigoSoft,
-    fontSize: 10,
+    color: brand.amber,
+    fontSize: 11,
     fontWeight: '700',
-    letterSpacing: 2.5,
-    marginTop: 4,
+    letterSpacing: 2,
+    marginTop: 6,
   },
   emptyHeadline: {
     color: brand.ink,
-    fontSize: 26,
-    fontWeight: '800',
-    letterSpacing: -0.5,
+    fontSize: 24,
+    fontWeight: '700',
     textAlign: 'center',
-    lineHeight: 32,
-    marginTop: 4,
+    lineHeight: 30,
+    marginTop: 2,
   },
   emptyHint: {
     color: brand.indigoSoft,
-    fontSize: 14,
-    lineHeight: 22,
+    fontSize: 16,
+    lineHeight: 24,
     textAlign: 'center',
-    opacity: 0.85,
-    maxWidth: 320,
+    maxWidth: 300,
   },
-  suggestions: { gap: 10, marginTop: 18, alignSelf: 'stretch' },
-  suggestionCard: {
+  voicePromptContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    backgroundColor: brand.paper,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(7,32,63,0.07)',
+    marginTop: 16,
+    backgroundColor: 'rgba(224,162,74,0.12)',
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: 24,
   },
-  suggestionBullet: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: brand.amber,
+  voicePromptIcon: {
+    fontSize: 18,
   },
-  suggestionText: { flex: 1, color: brand.ink, fontSize: 14, lineHeight: 20 },
-
-  // Bubbles
-  row: { marginVertical: 5, flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
-  rowLeft: { justifyContent: 'flex-start' },
-  rowRight: { justifyContent: 'flex-end' },
-  botAvatar: {
-    width: 28, height: 28, borderRadius: 14,
-    backgroundColor: brand.paper,
-    justifyContent: 'center', alignItems: 'center',
-    borderWidth: 1, borderColor: 'rgba(7,32,63,0.06)',
+  voicePromptText: {
+    color: brand.ink,
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
   },
-  bubble: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 18,
+  suggestionsLabel: {
+    color: brand.indigoSoft,
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+    marginTop: 24,
+    marginBottom: 4,
+    alignSelf: 'flex-start',
   },
-  bubbleUser: {
-    backgroundColor: brand.ink,
-    borderBottomRightRadius: 6,
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 1,
-  },
-  bubbleBot: {
-    backgroundColor: '#FFFFFF',
-    borderBottomLeftRadius: 6,
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 1,
-  },
-  bubbleText: { fontSize: 15, lineHeight: 22 },
-  pendingRow: { paddingVertical: 4 },
-  bubbleWrapper: { maxWidth: '85%' },
-  bubbleWrapperUser: { alignItems: 'flex-end' },
-  bubbleRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 6 },
-  bubbleRowUser: { flexDirection: 'row-reverse' },
-  playBtnInline: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 2,
-  },
-  playBtnBot: {
-    backgroundColor: 'rgba(7,32,63,0.08)',
-  },
-  playBtnUser: {
-    backgroundColor: 'rgba(244,238,227,0.2)',
-  },
-
-  // Composer
-  composerWrap: {
-    paddingHorizontal: 12,
-    paddingBottom: Platform.OS === 'ios' ? 24 : 14,
-    paddingTop: 8,
-    backgroundColor: 'transparent',
-  },
-  composer: {
+  suggestions: { gap: 10, marginTop: 8, alignSelf: 'stretch' },
+  suggestionCard: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    backgroundColor: brand.paper,
-    borderRadius: 26,
-    paddingLeft: 6,
-    paddingRight: 6,
-    paddingVertical: 6,
-    gap: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(7,32,63,0.08)',
-    shadowColor: '#000',
+    alignItems: 'center',
+    gap: 14,
+    paddingVertical: 18,
+    paddingHorizontal: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    shadowColor: brand.ink,
     shadowOpacity: 0.06,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },
     elevation: 3,
   },
+  suggestionNumber: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  suggestionNumberText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  suggestionText: { flex: 1, color: brand.ink, fontSize: 16, lineHeight: 22 },
+  suggestionArrow: {
+    color: brand.amber,
+    fontSize: 18,
+    fontWeight: '600',
+  },
+
+  // Quick Replies - more refined
+  quickReplies: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 6,
+  },
+  quickReplyChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    shadowColor: brand.ink,
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  quickReplyText: {
+    color: brand.indigo,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+
+  // Bubbles - better shadows and spacing
+  row: { marginVertical: 6, flexDirection: 'row', alignItems: 'flex-end', gap: 10 },
+  rowLeft: { justifyContent: 'flex-start' },
+  rowRight: { justifyContent: 'flex-end' },
+  botAvatar: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center', alignItems: 'center',
+    shadowColor: brand.ink,
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  bubble: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 20,
+  },
+  bubbleUser: {
+    backgroundColor: brand.ink,
+    borderBottomRightRadius: 6,
+    shadowColor: brand.ink,
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+  },
+  bubbleBot: {
+    backgroundColor: '#FFFFFF',
+    borderBottomLeftRadius: 6,
+    shadowColor: brand.ink,
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+  },
+  bubbleText: { fontSize: 16, lineHeight: 24 },
+  pendingRow: { paddingVertical: 6 },
+  bubbleWrapper: { maxWidth: '82%' },
+  bubbleWrapperUser: { alignItems: 'flex-end' },
+  bubbleRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
+  bubbleRowUser: { flexDirection: 'row-reverse' },
+  playBtnInline: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 3,
+  },
+  playBtnBot: {
+    backgroundColor: 'rgba(7,32,63,0.06)',
+  },
+  playBtnUser: {
+    backgroundColor: 'rgba(244,238,227,0.18)',
+  },
+
+  // Message actions (feedback + bookmark) - better alignment
+  msgActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 6,
+    marginLeft: 42, // align with bubble (play button width + gap)
+  },
+  actionBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(7,32,63,0.04)',
+  },
+  actionBtnActive: {
+    backgroundColor: 'rgba(7,32,63,0.1)',
+  },
+
+  // Composer - elevated and polished
+  composerWrap: {
+    paddingHorizontal: 16,
+    paddingBottom: Platform.OS === 'ios' ? 28 : 16,
+    paddingTop: 12,
+    backgroundColor: 'transparent',
+  },
+  composer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 28,
+    paddingLeft: 8,
+    paddingRight: 8,
+    paddingVertical: 8,
+    gap: 8,
+    shadowColor: brand.ink,
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 4,
+  },
   input: {
     flex: 1,
-    maxHeight: 140,
+    maxHeight: 120,
     backgroundColor: 'transparent',
-    fontSize: 15,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    fontSize: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
   inputContent: { color: brand.ink },
 
   micBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: 'rgba(224,162,74,0.18)',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1.5,
+    borderWidth: 2.5,
     borderColor: brand.amber,
   },
-  micBtnActive: { backgroundColor: '#B3261E', borderColor: '#B3261E' },
+  micBtnActive: {
+    backgroundColor: '#B3261E',
+    borderColor: '#B3261E',
+  },
+  micBtnIcon: {
+    fontSize: 24,
+  },
   sendBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: brand.ink,
     justifyContent: 'center',
     alignItems: 'center',
   },
 
+  composerHintRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 10,
+  },
   composerHint: {
     color: brand.indigoSoft,
-    fontSize: 10,
-    letterSpacing: 1.6,
+    fontSize: 13,
+    fontWeight: '500',
     textAlign: 'center',
-    marginTop: 6,
-    opacity: 0.7,
+  },
+  composerHintRecording: {
+    color: '#B3261E',
+    fontSize: 14,
     fontWeight: '600',
+  },
+  recordingIndicator: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#B3261E',
   },
 });
