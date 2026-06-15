@@ -605,9 +605,10 @@ export default function ChatScreen({ route, navigation }: Props) {
       // Voice follows the answer's own language, not the app's UI language.
       const ttsLang = ttsLangForText(clean, language);
 
-      // The server can't synthesize Pashto/Sindhi, so don't waste a round-trip
-      // that always 502s — go straight to the on-device voice for those.
-      if (ttsLang === 'ps' || ttsLang === 'sd') {
+      // Sindhi has no server voice (no provider offers one), so go straight to
+      // the on-device voice. Pashto IS served (Microsoft Edge voice), so it
+      // takes the normal server path below.
+      if (ttsLang === 'sd') {
         Speech.speak(clean, { language: TTS_LANG[ttsLang], pitch: 1.0, rate: 1.0 });
         return;
       }
