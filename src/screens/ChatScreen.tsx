@@ -303,6 +303,20 @@ function stripMarkdownForSpeech(text: string): string {
     .trim();
 }
 
+/**
+ * Choose the voice language from the answer's OWN script, not the app's UI
+ * language. A Pashto/Urdu answer must be read with that language's voice — using
+ * the English voice (the app setting) makes it skip the Arabic script and read
+ * only the stray Latin words. Latin text falls back to the app preference
+ * (English vs Roman Urdu).
+ */
+function ttsLangForText(text: string, appLang: ReplyLanguage): ReplyLanguage {
+  if (/[ټډړږښځڅېګڼ]/.test(text)) return 'ps';
+  if (/[ڳڻڪھڀٺٽ۾]/.test(text)) return 'sd';
+  if (/[؀-ۿ]/.test(text)) return 'ur'; // any other Arabic script → Urdu
+  return appLang === 'rud' ? 'rud' : 'en';
+}
+
 const isPlaceholderTitleText = (t: string) =>
   t === COPY.en.newChat || t === COPY.ur.newChat || t === COPY.rud.newChat ||
   t === COPY.ps.newChat || t === COPY.sd.newChat;
@@ -588,11 +602,21 @@ export default function ChatScreen({ route, navigation }: Props) {
       const clean = stripMarkdownForSpeech(text);
       if (!clean) return;
 
-      const url = ttsUrl(clean, language);
+      // Voice follows the answer's own language, not the app's UI language.
+      const ttsLang = ttsLangForText(clean, language);
+
+      // The server can't synthesize Pashto/Sindhi, so don't waste a round-trip
+      // that always 502s — go straight to the on-device voice for those.
+      if (ttsLang === 'ps' || ttsLang === 'sd') {
+        Speech.speak(clean, { language: TTS_LANG[ttsLang], pitch: 1.0, rate: 1.0 });
+        return;
+      }
+
+      const url = ttsUrl(clean, ttsLang);
       try {
         // Validate synthesis before handing the URL to the player, so a failure
-        // (incl. a 502 for Pashto/Sindhi) cleanly falls back instead of playing
-        // silence. The backend caches the WAV, so the player's fetch is cheap.
+        // cleanly falls back instead of playing silence. The backend caches the
+        // WAV, so the player's fetch is cheap.
         const res = await fetch(url);
         if (!res.ok) throw new Error('tts unavailable');
         // Route audio to the loudspeaker — recording mode can otherwise pin
@@ -601,7 +625,7 @@ export default function ChatScreen({ route, navigation }: Props) {
         ttsPlayer.replace({ uri: url });
         ttsPlayer.play();
       } catch {
-        Speech.speak(clean, { language: TTS_LANG[language], pitch: 1.0, rate: 1.0 });
+        Speech.speak(clean, { language: TTS_LANG[ttsLang], pitch: 1.0, rate: 1.0 });
       }
     },
     [language, muted, stopSpeaking, ttsPlayer],
