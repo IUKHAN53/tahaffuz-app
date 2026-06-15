@@ -276,6 +276,31 @@ const TTS_LANG: Record<ReplyLanguage, string> = {
   sd: 'sd-PK',
 };
 
+/**
+ * Strip Markdown so the text-to-speech engine doesn't read "asterisk asterisk"
+ * or "hash" aloud. Bullet/number markers, emphasis, headings, links, and code
+ * fences are reduced to their spoken content. Safe on whole answers and on the
+ * single sentences the progressive speaker queues.
+ */
+function stripMarkdownForSpeech(text: string): string {
+  return text
+    .replace(/```[\s\S]*?```/g, ' ') // fenced code blocks
+    .replace(/`([^`]+)`/g, '$1') // inline code
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ') // images
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1') // links → link text
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '') // ATX headings
+    .replace(/(\*\*|__)(.*?)\1/g, '$2') // bold
+    .replace(/(\*|_)(.*?)\1/g, '$2') // italics
+    .replace(/~~(.*?)~~/g, '$1') // strikethrough
+    .replace(/^\s*[-*+]\s+/gm, '') // bullet markers
+    .replace(/^\s*\d+[.)]\s+/gm, '') // numbered-list markers
+    .replace(/^\s*>\s?/gm, '') // blockquotes
+    .replace(/[*_#`>~|]/g, '') // any stray markdown symbols
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\n{2,}/g, '\n')
+    .trim();
+}
+
 const isPlaceholderTitleText = (t: string) =>
   t === COPY.en.newChat || t === COPY.ur.newChat || t === COPY.rud.newChat ||
   t === COPY.ps.newChat || t === COPY.sd.newChat;
@@ -549,9 +574,10 @@ export default function ChatScreen({ route, navigation }: Props) {
     if (isSpeakingRef.current || speakQueueRef.current.length === 0 || muted) return;
     isSpeakingRef.current = true;
     const sentence = speakQueueRef.current.shift();
-    if (sentence) {
+    const spoken = sentence ? stripMarkdownForSpeech(sentence) : '';
+    if (spoken) {
       await new Promise<void>((resolve) => {
-        Speech.speak(sentence, {
+        Speech.speak(spoken, {
           language: TTS_LANG[language],
           pitch: 1.0,
           rate: 1.05,
@@ -575,7 +601,8 @@ export default function ChatScreen({ route, navigation }: Props) {
       stopSpeaking();
       speakQueueRef.current = [];
       isSpeakingRef.current = false;
-      Speech.speak(text, { language: TTS_LANG[language], pitch: 1.0, rate: 1.05 });
+      const spoken = stripMarkdownForSpeech(text);
+      if (spoken) Speech.speak(spoken, { language: TTS_LANG[language], pitch: 1.0, rate: 1.05 });
     },
     [language, muted, stopSpeaking],
   );
