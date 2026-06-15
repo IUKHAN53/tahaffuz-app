@@ -18,6 +18,7 @@ import {
   useTheme,
 } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
+import Constants from 'expo-constants';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { deleteChat } from '../api';
@@ -209,6 +210,9 @@ const SessionCard = memo(function SessionCard({
   );
 });
 
+/** App version, shown in the header so we can tell which build a user is on. */
+const APP_VERSION = Constants.expoConfig?.version ?? '';
+
 export default function SessionsScreen({ navigation }: Props) {
   const theme = useTheme();
   const { language } = useLanguage();
@@ -306,7 +310,12 @@ export default function SessionsScreen({ navigation }: Props) {
             <View style={styles.headerBrandRow}>
               <BrandMark size={36} />
               <View style={styles.headerBrandText}>
-                <Text style={styles.headerBrandName}>Tahaffuz</Text>
+                <View style={styles.headerNameRow}>
+                  <Text style={styles.headerBrandName}>Tahaffuz</Text>
+                  {APP_VERSION !== '' && (
+                    <Text style={styles.headerVersion}>v{APP_VERSION}</Text>
+                  )}
+                </View>
                 <Text style={[styles.headerBrandTag, rtl ? styles.rtl : null]} numberOfLines={1}>
                   {s.tag}
                 </Text>
@@ -466,12 +475,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headerBrandText: { flexShrink: 1 },
+  headerNameRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
   headerBrandName: {
     color: brand.cream,
     fontSize: 26,
     fontWeight: '700',
     letterSpacing: 0.2,
     lineHeight: 30,
+  },
+  headerVersion: {
+    color: 'rgba(244,238,227,0.5)',
+    fontSize: 12,
+    fontWeight: '600',
   },
   headerBrandTag: {
     color: 'rgba(244,238,227,0.6)',
