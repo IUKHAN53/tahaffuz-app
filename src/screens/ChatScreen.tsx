@@ -603,15 +603,9 @@ export default function ChatScreen({ route, navigation }: Props) {
       if (!clean) return;
 
       // Voice follows the answer's own language, not the app's UI language.
+      // All languages are served now: en/ur/rud/ps via Edge, sd via OpenAI.
+      // On any server failure the catch below falls back to the on-device voice.
       const ttsLang = ttsLangForText(clean, language);
-
-      // Sindhi has no server voice (no provider offers one), so go straight to
-      // the on-device voice. Pashto IS served (Microsoft Edge voice), so it
-      // takes the normal server path below.
-      if (ttsLang === 'sd') {
-        Speech.speak(clean, { language: TTS_LANG[ttsLang], pitch: 1.0, rate: 1.0 });
-        return;
-      }
 
       const url = ttsUrl(clean, ttsLang);
       try {
