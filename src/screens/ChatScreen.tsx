@@ -26,6 +26,7 @@ import {
   AudioModule,
   RecordingPresets,
   setAudioModeAsync,
+  useAudioPlayer,
   useAudioRecorder,
   useAudioRecorderState,
 } from 'expo-audio';
@@ -38,6 +39,7 @@ import {
   sendTextStream,
   submitFeedback,
   toggleBookmark,
+  ttsUrl,
   type ReplyLanguage,
   type FeedbackRating,
 } from '../api';
@@ -493,6 +495,9 @@ export default function ChatScreen({ route, navigation }: Props) {
   const messagesRef = useRef<Msg[]>([]);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder);
+  // Plays the server's natural Gemini TTS (reliable for ur/en/rud, where the
+  // on-device voice is often missing). Pashto/Sindhi fall back to on-device.
+  const ttsPlayer = useAudioPlayer(null);
   const recordingPulse = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -553,6 +558,9 @@ export default function ChatScreen({ route, navigation }: Props) {
     })();
     return () => {
       Speech.stop();
+      try {
+        ttsPlayer.pause();
+      } catch {}
     };
   }, [initialChatId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -562,87 +570,42 @@ export default function ChatScreen({ route, navigation }: Props) {
 
   const stopSpeaking = useCallback(() => {
     Speech.stop();
-  }, []);
+    try {
+      ttsPlayer.pause();
+    } catch {}
+  }, [ttsPlayer]);
 
-  // Track spoken text to avoid re-speaking during streaming
-  const spokenTextRef = useRef('');
-  const speakQueueRef = useRef<string[]>([]);
-  const isSpeakingRef = useRef(false);
-
-  // Process the speech queue sequentially
-  const processQueue = useCallback(async () => {
-    if (isSpeakingRef.current || speakQueueRef.current.length === 0 || muted) return;
-    isSpeakingRef.current = true;
-    const sentence = speakQueueRef.current.shift();
-    const spoken = sentence ? stripMarkdownForSpeech(sentence) : '';
-    if (spoken) {
-      await new Promise<void>((resolve) => {
-        Speech.speak(spoken, {
-          language: TTS_LANG[language],
-          pitch: 1.0,
-          rate: 1.05,
-          onDone: () => resolve(),
-          onError: () => resolve(),
-          onStopped: () => resolve(),
-        });
-      });
-    }
-    isSpeakingRef.current = false;
-    // Process next in queue
-    if (speakQueueRef.current.length > 0) {
-      processQueue();
-    }
-  }, [language, muted]);
-
-  // Speak full text (for manual play button or final speak)
+  /**
+   * Read an answer aloud. Primary path is the server's natural Gemini voice
+   * (reliable across devices); if synthesis is unavailable — a server/quota
+   * failure, offline, or an unsupported language like Pashto/Sindhi — we fall
+   * back to the on-device voice. Markdown is stripped either way.
+   */
   const speak = useCallback(
     async (text: string) => {
       if (muted || !text.trim()) return;
       stopSpeaking();
-      speakQueueRef.current = [];
-      isSpeakingRef.current = false;
-      const spoken = stripMarkdownForSpeech(text);
-      if (spoken) Speech.speak(spoken, { language: TTS_LANG[language], pitch: 1.0, rate: 1.05 });
-    },
-    [language, muted, stopSpeaking],
-  );
+      const clean = stripMarkdownForSpeech(text);
+      if (!clean) return;
 
-  // Progressive speak: queue new sentences as they stream in
-  const speakProgressive = useCallback(
-    (fullText: string) => {
-      if (muted || !fullText.trim()) return;
-      const alreadySpoken = spokenTextRef.current;
-      const newText = fullText.slice(alreadySpoken.length);
-      if (!newText) return;
-
-      // Find complete sentences in new text (end with . ! ? or Urdu markers)
-      const sentenceEnders = /([.!?۔؟])\s*/g;
-      let match: RegExpExecArray | null;
-      let lastEnd = 0;
-
-      while ((match = sentenceEnders.exec(newText)) !== null) {
-        const sentence = newText.slice(lastEnd, match.index + 1).trim();
-        if (sentence.length > 3) {
-          speakQueueRef.current.push(sentence);
-        }
-        lastEnd = match.index + match[0].length;
-      }
-
-      // Update spoken reference to include complete sentences
-      if (lastEnd > 0) {
-        spokenTextRef.current = alreadySpoken + newText.slice(0, lastEnd);
-        processQueue();
+      const url = ttsUrl(clean, language);
+      try {
+        // Validate synthesis before handing the URL to the player, so a failure
+        // (incl. a 502 for Pashto/Sindhi) cleanly falls back instead of playing
+        // silence. The backend caches the WAV, so the player's fetch is cheap.
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('tts unavailable');
+        // Route audio to the loudspeaker — recording mode can otherwise pin
+        // playback to the earpiece on Android.
+        await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+        ttsPlayer.replace({ uri: url });
+        ttsPlayer.play();
+      } catch {
+        Speech.speak(clean, { language: TTS_LANG[language], pitch: 1.0, rate: 1.0 });
       }
     },
-    [muted, processQueue],
+    [language, muted, stopSpeaking, ttsPlayer],
   );
-
-  // Reset progressive speech state for new message
-  const resetProgressiveSpeech = useCallback(() => {
-    spokenTextRef.current = '';
-    speakQueueRef.current = [];
-    isSpeakingRef.current = false;
-  }, []);
 
   const persistSession = useCallback(
     (id: number, title: string) => {
@@ -708,7 +671,6 @@ export default function ChatScreen({ route, navigation }: Props) {
       setError(null);
       setRetryText(null);
       stopSpeaking();
-      resetProgressiveSpeech();
 
       const placeholderId = `p${Date.now()}`;
       const userMsg: Msg = { id: `u${Date.now()}`, role: 'user', content: text };
@@ -725,7 +687,6 @@ export default function ChatScreen({ route, navigation }: Props) {
         setMessages((m) => m.map((x) => (x.id === placeholderId ? { ...x, pending: false, content, serverId } : x)));
 
       let sawDelta = false;
-      let accumulatedText = '';
       try {
         const res = await sendTextStream(
           { deviceId, message: text, chatId, language },
@@ -733,14 +694,11 @@ export default function ChatScreen({ route, navigation }: Props) {
             onMeta: (id) => setChatId(id),
             onDelta: (delta) => {
               sawDelta = true;
-              accumulatedText += delta;
               setMessages((m) =>
                 m.map((x) =>
                   x.id === placeholderId ? { ...x, pending: false, content: x.content + delta } : x,
                 ),
               );
-              // Progressive TTS: speak sentences as they complete
-              speakProgressive(accumulatedText);
               scroll();
             },
           },
@@ -748,12 +706,8 @@ export default function ChatScreen({ route, navigation }: Props) {
         setChatId(res.chat_id);
         applyFinal(res.reply.content, res.reply.id);
         persistSession(res.chat_id, titleForCache);
-        // Speak any remaining text that wasn't a complete sentence
-        const remaining = res.reply.content.slice(spokenTextRef.current.length).trim();
-        if (remaining) {
-          speakQueueRef.current.push(remaining);
-          processQueue();
-        }
+        // Read the completed answer aloud via the server (natural) voice.
+        speak(res.reply.content);
       } catch (streamErr: any) {
         if (sawDelta) {
           setError(streamErr?.message ?? strings.errorNet);
@@ -786,7 +740,7 @@ export default function ChatScreen({ route, navigation }: Props) {
         scroll();
       }
     },
-    [busy, chatId, chatTitle, deviceId, input, language, persistSession, processQueue, resetProgressiveSpeech, scroll, speak, speakProgressive, stopSpeaking, strings.errorNet, strings.offlineNote],
+    [busy, chatId, chatTitle, deviceId, input, language, persistSession, scroll, speak, stopSpeaking, strings.errorNet, strings.offlineNote],
   );
 
   const startRecording = useCallback(async () => {
