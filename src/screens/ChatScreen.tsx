@@ -9,6 +9,8 @@ import {
   StatusBar,
   StyleSheet,
   View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from 'react-native';
 import {
   Icon,
@@ -54,6 +56,7 @@ import { useLanguage } from '../language';
 import { brand, palette } from '../theme';
 import { BrandMark } from '../components/BrandMark';
 import { TypingDots } from '../components/TypingDots';
+import { LanguageSwitcher } from '../components/LanguageSwitcher';
 import type { RootStackParamList } from '../navigation';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
@@ -491,10 +494,13 @@ export default function ChatScreen({ route, navigation }: Props) {
   const { language } = useLanguage();
   const strings = COPY[language];
   const isRtl = language === 'ur' || language === 'ps' || language === 'sd';
-  const initialChatId = route.params?.chatId ?? null;
+  // The chat to show is driven by route params: a chatId to open an existing
+  // chat, or null + a `fresh` nonce to force a brand-new chat.
+  const paramChatId = route.params?.chatId ?? null;
+  const paramFresh = route.params?.fresh;
 
   const [deviceId, setDeviceId] = useState<string | null>(null);
-  const [chatId, setChatId] = useState<number | null>(initialChatId);
+  const [chatId, setChatId] = useState<number | null>(paramChatId);
   const [chatTitle, setChatTitle] = useState<string>(strings.newChat);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
@@ -502,7 +508,7 @@ export default function ChatScreen({ route, navigation }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [retryText, setRetryText] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [loadingHistory, setLoadingHistory] = useState(initialChatId !== null);
+  const [loadingHistory, setLoadingHistory] = useState(paramChatId !== null);
   const [muted, setMuted] = useState(false);
 
   const listRef = useRef<FlatList<Msg>>(null);
@@ -538,6 +544,7 @@ export default function ChatScreen({ route, navigation }: Props) {
     recordingPulse.setValue(1);
   }, [recorderState.isRecording, recordingPulse]);
 
+  // Device id + audio permissions: once.
   useEffect(() => {
     (async () => {
       const id = await getDeviceId();
@@ -548,10 +555,33 @@ export default function ChatScreen({ route, navigation }: Props) {
           await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
         }
       } catch {}
+    })();
+    return () => {
+      Speech.stop();
+      try {
+        ttsPlayer.pause();
+      } catch {}
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-      if (initialChatId) {
-        try {
-          const detail = await getChat(id, initialChatId);
+  // Load the requested chat — or reset to a blank new chat — whenever the route
+  // asks for a different one (opening from history, or tapping "new chat").
+  useEffect(() => {
+    if (!deviceId) return;
+    Speech.stop();
+    try {
+      ttsPlayer.pause();
+    } catch {}
+    setInput('');
+    setError(null);
+    setRetryText(null);
+    setChatId(paramChatId);
+    setChatTitle(strings.newChat);
+
+    if (paramChatId) {
+      setLoadingHistory(true);
+      getChat(deviceId, paramChatId)
+        .then((detail) => {
           if (detail.chat.title) setChatTitle(detail.chat.title);
           setMessages(
             detail.messages.map((m) => ({
@@ -561,26 +591,40 @@ export default function ChatScreen({ route, navigation }: Props) {
               content: m.content,
             })),
           );
-        } catch (e: any) {
-          setError(e?.message ?? strings.errorLoad);
-        } finally {
-          setLoadingHistory(false);
-        }
-      } else {
-        setLoadingHistory(false);
-      }
-    })();
-    return () => {
-      Speech.stop();
-      try {
-        ttsPlayer.pause();
-      } catch {}
-    };
-  }, [initialChatId]); // eslint-disable-line react-hooks/exhaustive-deps
+        })
+        .catch((e: any) => setError(e?.message ?? strings.errorLoad))
+        .finally(() => setLoadingHistory(false));
+    } else {
+      setMessages([]);
+      setLoadingHistory(false);
+    }
+  }, [deviceId, paramChatId, paramFresh]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const scroll = useCallback(() => {
+  // True while the user is at (or near) the bottom of the list. We only
+  // auto-follow new content when this is true, so scrolling up to read earlier
+  // messages doesn't keep yanking the view back down.
+  const atBottomRef = useRef(true);
+
+  const handleScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
+    atBottomRef.current =
+      contentSize.height - (contentOffset.y + layoutMeasurement.height) < 80;
+  }, []);
+
+  const scrollToEnd = useCallback(() => {
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
   }, []);
+
+  // After the user sends — always pin to the bottom.
+  const scroll = useCallback(() => {
+    atBottomRef.current = true;
+    scrollToEnd();
+  }, [scrollToEnd]);
+
+  // On content growth — follow only if the user is already at the bottom.
+  const followIfAtBottom = useCallback(() => {
+    if (atBottomRef.current) scrollToEnd();
+  }, [scrollToEnd]);
 
   const stopSpeaking = useCallback(() => {
     Speech.stop();
@@ -625,6 +669,55 @@ export default function ChatScreen({ route, navigation }: Props) {
     },
     [language, muted, stopSpeaking, ttsPlayer],
   );
+
+  /**
+   * Reveal a finished answer and its voice TOGETHER. We briefly wait for the
+   * server audio to be synthesized, then show the text and start playback at
+   * the same moment — instead of showing text immediately and playing audio
+   * ~15s later. If audio is slow (cap) or fails, the text shows and the
+   * on-device voice covers it so nothing stalls.
+   */
+  const revealWithAudio = useCallback(
+    (placeholderId: string, content: string, serverId?: number): Promise<void> => {
+      const reveal = () =>
+        setMessages((m) =>
+          m.map((x) => (x.id === placeholderId ? { ...x, pending: false, content, serverId } : x)),
+        );
+
+      if (muted || !content.trim()) {
+        reveal();
+        return Promise.resolve();
+      }
+
+      const clean = stripMarkdownForSpeech(content);
+      const ttsLang = ttsLangForText(clean, language);
+      const url = ttsUrl(clean, ttsLang);
+
+      return Promise.race<string | null>([
+        fetch(url)
+          .then((r) => (r.ok ? url : null))
+          .catch(() => null),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
+      ]).then(async (ready) => {
+        reveal();
+        scroll();
+        if (ready) {
+          try {
+            await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+            ttsPlayer.replace({ uri: ready });
+            ttsPlayer.play();
+          } catch {}
+        } else {
+          Speech.speak(clean, { language: TTS_LANG[ttsLang], pitch: 1.0, rate: 1.0 });
+        }
+      });
+    },
+    [muted, language, ttsPlayer, scroll],
+  );
+
+  const startNewChat = useCallback(() => {
+    navigation.navigate('Chat', { chatId: null, fresh: Date.now() });
+  }, [navigation]);
 
   const persistSession = useCallback(
     (id: number, title: string) => {
@@ -702,31 +795,22 @@ export default function ChatScreen({ route, navigation }: Props) {
       const titleForCache = freshTitle ? text.slice(0, 60) : chatTitle;
       scroll();
 
-      const applyFinal = (content: string, serverId?: number) =>
-        setMessages((m) => m.map((x) => (x.id === placeholderId ? { ...x, pending: false, content, serverId } : x)));
-
+      // The answer streams server-side, but we keep the typing indicator until
+      // the reply (and its voice) are ready, then reveal text + audio together.
       let sawDelta = false;
       try {
         const res = await sendTextStream(
           { deviceId, message: text, chatId, language },
           {
             onMeta: (id) => setChatId(id),
-            onDelta: (delta) => {
+            onDelta: () => {
               sawDelta = true;
-              setMessages((m) =>
-                m.map((x) =>
-                  x.id === placeholderId ? { ...x, pending: false, content: x.content + delta } : x,
-                ),
-              );
-              scroll();
             },
           },
         );
         setChatId(res.chat_id);
-        applyFinal(res.reply.content, res.reply.id);
         persistSession(res.chat_id, titleForCache);
-        // Read the completed answer aloud via the server (natural) voice.
-        speak(res.reply.content);
+        await revealWithAudio(placeholderId, res.reply.content, res.reply.id);
       } catch (streamErr: any) {
         if (sawDelta) {
           setError(streamErr?.message ?? strings.errorNet);
@@ -736,17 +820,15 @@ export default function ChatScreen({ route, navigation }: Props) {
           try {
             const res = await sendText({ deviceId, message: text, chatId, language });
             setChatId(res.chat_id);
-            applyFinal(res.reply.content, res.reply.id);
             persistSession(res.chat_id, titleForCache);
-            speak(res.reply.content);
+            await revealWithAudio(placeholderId, res.reply.content, res.reply.id);
           } catch (e: any) {
             // Last resort: answer from the offline quick-answers cache.
             const cached = await getCachedQuickAnswers();
             const hit = cached ? searchQuickAnswers(text, cached.answers) : null;
             if (hit) {
-              applyFinal(hit.answer);
               setError(strings.offlineNote);
-              speak(hit.answer);
+              await revealWithAudio(placeholderId, hit.answer);
             } else {
               setMessages((m) => m.filter((x) => x.id !== placeholderId));
               setError(e?.message ?? strings.errorNet);
@@ -759,7 +841,7 @@ export default function ChatScreen({ route, navigation }: Props) {
         scroll();
       }
     },
-    [busy, chatId, chatTitle, deviceId, input, language, persistSession, scroll, speak, stopSpeaking, strings.errorNet, strings.offlineNote],
+    [busy, chatId, chatTitle, deviceId, input, language, persistSession, revealWithAudio, scroll, stopSpeaking, strings.errorNet, strings.offlineNote],
   );
 
   const startRecording = useCallback(async () => {
@@ -803,15 +885,13 @@ export default function ChatScreen({ route, navigation }: Props) {
       const freshTitle = isPlaceholderTitleText(chatTitle) && !chatId;
       if (freshTitle) setChatTitle(transcript.slice(0, 60));
 
+      // Show what they said now; keep the answer as a typing indicator until its
+      // voice is ready, then reveal text + audio together.
       setMessages((m) =>
-        m.map((x) => {
-          if (x.id === userId) return { ...x, pending: false, content: transcript };
-          if (x.id === placeholderId) return { ...x, pending: false, content: res.reply.content, serverId: res.reply.id };
-          return x;
-        }),
+        m.map((x) => (x.id === userId ? { ...x, pending: false, content: transcript } : x)),
       );
       persistSession(res.chat_id, freshTitle ? transcript.slice(0, 60) : chatTitle);
-      speak(res.reply.content);
+      await revealWithAudio(placeholderId, res.reply.content, res.reply.id);
     } catch (e: any) {
       setMessages((m) => m.filter((x) => !x.pending));
       setError(e?.message ?? strings.errorVoice);
@@ -819,7 +899,7 @@ export default function ChatScreen({ route, navigation }: Props) {
       setBusy(false);
       scroll();
     }
-  }, [chatId, chatTitle, deviceId, language, persistSession, recorder, recorderState.isRecording, scroll, speak, strings.errorNoAudio, strings.errorVoice, strings.voicePlaceholder, strings.voiceTranscriptFallback]);
+  }, [chatId, chatTitle, deviceId, language, persistSession, recorder, recorderState.isRecording, revealWithAudio, scroll, strings.errorNoAudio, strings.errorVoice, strings.voicePlaceholder, strings.voiceTranscriptFallback]);
 
   const toggleRecording = useCallback(() => {
     if (recorderState.isRecording) {
@@ -941,32 +1021,44 @@ export default function ChatScreen({ route, navigation }: Props) {
       >
         <View style={styles.headerRow}>
           <Pressable
-            onPress={() => navigation.goBack()}
+            onPress={() => navigation.navigate('Sessions')}
             android_ripple={{ color: 'rgba(244,238,227,0.2)', borderless: true }}
-            style={styles.headerBackBtn}
+            style={styles.headerIconBtn}
             accessibilityRole="button"
-            accessibilityLabel="Go back"
+            accessibilityLabel="Chat history"
           >
-            <Icon source="arrow-left" size={24} color={brand.cream} />
+            <Icon source="menu" size={26} color={brand.cream} />
           </Pressable>
           <View style={styles.headerCenter}>
             <View style={styles.headerBrand}>
-              <BrandMark size={24} />
+              <BrandMark size={22} />
               <Text style={styles.headerBrandText}>Tahaffuz</Text>
             </View>
           </View>
-          <Pressable
-            onPress={() => {
-              setMuted((m) => !m);
-              stopSpeaking();
-            }}
-            android_ripple={{ color: 'rgba(244,238,227,0.2)', borderless: true }}
-            style={[styles.headerMuteBtn, muted && styles.headerMuteBtnActive]}
-            accessibilityRole="button"
-            accessibilityLabel={muted ? 'Unmute audio' : 'Mute audio'}
-          >
-            <Text style={styles.headerMuteIcon}>{muted ? '🔇' : '🔊'}</Text>
-          </Pressable>
+          <View style={styles.headerActions}>
+            <LanguageSwitcher />
+            <Pressable
+              onPress={startNewChat}
+              android_ripple={{ color: 'rgba(244,238,227,0.2)', borderless: true }}
+              style={styles.headerIconBtn}
+              accessibilityRole="button"
+              accessibilityLabel="New chat"
+            >
+              <Icon source="plus" size={24} color={brand.cream} />
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                setMuted((m) => !m);
+                stopSpeaking();
+              }}
+              android_ripple={{ color: 'rgba(244,238,227,0.2)', borderless: true }}
+              style={[styles.headerMuteBtn, muted && styles.headerMuteBtnActive]}
+              accessibilityRole="button"
+              accessibilityLabel={muted ? 'Unmute audio' : 'Mute audio'}
+            >
+              <Text style={styles.headerMuteIcon}>{muted ? '🔇' : '🔊'}</Text>
+            </Pressable>
+          </View>
         </View>
       </LinearGradient>
 
@@ -984,7 +1076,9 @@ export default function ChatScreen({ route, navigation }: Props) {
             contentContainerStyle={messages.length ? styles.list : styles.listEmpty}
             ListEmptyComponent={empty}
             ListFooterComponent={quickRepliesFooter}
-            onContentSizeChange={scroll}
+            onContentSizeChange={followIfAtBottom}
+            onScroll={handleScroll}
+            scrollEventThrottle={64}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="interactive"
@@ -1104,27 +1198,28 @@ const styles = StyleSheet.create({
     paddingBottom: 18,
     paddingHorizontal: 16,
   },
-  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  headerBackBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  headerIconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: 'rgba(244,238,227,0.12)',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  headerCenter: { flex: 1, alignItems: 'center' },
-  headerBrand: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  headerCenter: { flex: 1, alignItems: 'flex-start', paddingLeft: 4 },
+  headerBrand: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   headerBrandText: {
     color: brand.cream,
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
     letterSpacing: 0.3,
   },
   headerMuteBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: 'rgba(244,238,227,0.12)',
     justifyContent: 'center',
     alignItems: 'center',

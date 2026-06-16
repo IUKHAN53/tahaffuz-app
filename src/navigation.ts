@@ -1,6 +1,6 @@
 export type RootStackParamList = {
+  Chat: { chatId: number | null; fresh?: number };
   Sessions: undefined;
-  Chat: { chatId: number | null };
   Bookmarks: undefined;
   Search: undefined;
 };

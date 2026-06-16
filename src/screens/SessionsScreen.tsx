@@ -307,18 +307,23 @@ export default function SessionsScreen({ navigation }: Props) {
       >
         <View style={styles.headerInner}>
           <View style={styles.headerTopRow}>
+            <Pressable
+              onPress={() => navigation.goBack()}
+              android_ripple={{ color: 'rgba(244,238,227,0.2)', borderless: true }}
+              style={styles.headerBackBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Back to chat"
+            >
+              <Icon source="arrow-left" size={24} color={brand.cream} />
+            </Pressable>
             <View style={styles.headerBrandRow}>
-              <BrandMark size={36} />
               <View style={styles.headerBrandText}>
                 <View style={styles.headerNameRow}>
-                  <Text style={styles.headerBrandName}>Tahaffuz</Text>
+                  <Text style={styles.headerBrandName}>Chats</Text>
                   {APP_VERSION !== '' && (
                     <Text style={styles.headerVersion}>v{APP_VERSION}</Text>
                   )}
                 </View>
-                <Text style={[styles.headerBrandTag, rtl ? styles.rtl : null]} numberOfLines={1}>
-                  {s.tag}
-                </Text>
               </View>
             </View>
             <View style={styles.headerActions}>
@@ -365,7 +370,7 @@ export default function SessionsScreen({ navigation }: Props) {
           <Text style={[styles.emptyHeadline, rtl ? styles.rtl : null]}>{s.readyHeadline}</Text>
           <Text style={[styles.emptyHint, rtl ? styles.rtl : null]}>{s.readyHint}</Text>
           <Pressable
-            onPress={() => navigation.navigate('Chat', { chatId: null })}
+            onPress={() => navigation.navigate('Chat', { chatId: null, fresh: Date.now() })}
             android_ripple={{ color: 'rgba(244,238,227,0.18)' }}
             style={({ pressed }) => [styles.emptyCta, pressed && { opacity: 0.92 }]}
           >
@@ -397,7 +402,7 @@ export default function SessionsScreen({ navigation }: Props) {
 
       {sessions.length > 0 && (
         <Pressable
-          onPress={() => navigation.navigate('Chat', { chatId: null })}
+          onPress={() => navigation.navigate('Chat', { chatId: null, fresh: Date.now() })}
           android_ripple={{ color: 'rgba(244,238,227,0.25)', borderless: true, radius: 30 }}
           style={({ pressed }) => [styles.fab, pressed && { opacity: 0.94 }]}
         >
@@ -464,8 +469,16 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 14,
   },
-  headerBrandRow: { flexDirection: 'row', alignItems: 'center', gap: 16, flexShrink: 1 },
+  headerBrandRow: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, flexShrink: 1 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  headerBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(244,238,227,0.12)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   headerIconBtn: {
     width: 40,
     height: 40,

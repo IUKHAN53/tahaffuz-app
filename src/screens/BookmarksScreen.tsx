@@ -16,6 +16,7 @@ import { getDeviceId } from '../deviceId';
 import { useLanguage, type AppLanguage } from '../language';
 import { brand } from '../theme';
 import { TypingDots } from '../components/TypingDots';
+import { LanguageSwitcher } from '../components/LanguageSwitcher';
 import type { RootStackParamList } from '../navigation';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Bookmarks'>;
@@ -241,7 +242,7 @@ export default function BookmarksScreen({ navigation }: Props) {
             <Icon source="arrow-left" size={24} color={brand.cream} />
           </Pressable>
           <Text style={[styles.headerTitle, rtl ? styles.rtl : null]}>{s.title}</Text>
-          <View style={styles.headerSpacer} />
+          <LanguageSwitcher />
         </View>
       </LinearGradient>
 

@@ -37,11 +37,21 @@ export default function App() {
             <NavigationContainer theme={navTheme}>
               <StatusBar style="light" backgroundColor={paperTheme.colors.primary} />
               <Stack.Navigator
-                initialRouteName="Sessions"
+                initialRouteName="Chat"
                 screenOptions={{ headerShown: false, animation: 'slide_from_right' }}
               >
-                <Stack.Screen name="Sessions" component={SessionsScreen} />
-                <Stack.Screen name="Chat" component={ChatScreen} />
+                {/* Land directly in a new chat, like other AI chat apps. */}
+                <Stack.Screen
+                  name="Chat"
+                  component={ChatScreen}
+                  initialParams={{ chatId: null }}
+                />
+                {/* Chat history opens as a slide-in panel from the left. */}
+                <Stack.Screen
+                  name="Sessions"
+                  component={SessionsScreen}
+                  options={{ animation: 'slide_from_left' }}
+                />
                 <Stack.Screen name="Bookmarks" component={BookmarksScreen} />
                 <Stack.Screen name="Search" component={SearchScreen} />
               </Stack.Navigator>
