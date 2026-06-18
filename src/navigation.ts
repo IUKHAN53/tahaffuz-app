@@ -1,4 +1,5 @@
 export type RootStackParamList = {
+  Register: undefined;
   Chat: { chatId: number | null; fresh?: number };
   Sessions: undefined;
   Bookmarks: undefined;

@@ -75,11 +75,14 @@ async function jsonOrThrow(res: Response): Promise<any> {
 
 export type ReplyLanguage = 'en' | 'ur' | 'fa' | 'ps' | 'sd';
 
+export type LatLng = { latitude: number; longitude: number };
+
 export async function sendText(params: {
   deviceId: string;
   message: string;
   chatId?: number | null;
   language?: ReplyLanguage;
+  location?: LatLng | null;
 }): Promise<ChatReply> {
   const res = await fetch(`${apiBase}/api/chat/text`, {
     method: 'POST',
@@ -89,6 +92,8 @@ export async function sendText(params: {
       message: params.message,
       chat_id: params.chatId ?? null,
       language: params.language,
+      latitude: params.location?.latitude,
+      longitude: params.location?.longitude,
     }),
   });
   return jsonOrThrow(res);
@@ -111,6 +116,7 @@ export async function sendTextStream(
     message: string;
     chatId?: number | null;
     language?: ReplyLanguage;
+    location?: LatLng | null;
   },
   handlers: StreamHandlers = {},
 ): Promise<ChatReply> {
@@ -122,6 +128,8 @@ export async function sendTextStream(
       message: params.message,
       chat_id: params.chatId ?? null,
       language: params.language,
+      latitude: params.location?.latitude,
+      longitude: params.location?.longitude,
     }),
   });
 
@@ -189,12 +197,17 @@ export async function sendAudio(params: {
   audioMime: string;
   chatId?: number | null;
   language?: ReplyLanguage;
+  location?: LatLng | null;
 }): Promise<ChatReply> {
   const doSend = async (): Promise<ChatReply> => {
     const form = new FormData();
     form.append('device_id', params.deviceId);
     if (params.chatId) form.append('chat_id', String(params.chatId));
     if (params.language) form.append('language', params.language);
+    if (params.location) {
+      form.append('latitude', String(params.location.latitude));
+      form.append('longitude', String(params.location.longitude));
+    }
     // RN's FormData accepts a {uri, name, type} object; TS types lag behind the runtime.
     form.append('audio', {
       uri: params.audioUri,
@@ -444,4 +457,54 @@ export async function updatePushPreferences(params: {
   });
   const json = await jsonOrThrow(res);
   return { success: json.success };
+}
+
+// Registration + area hierarchy (onboarding)
+export type AreaTown = { name: string; union_councils: string[] };
+export type AreaDistrict = { name: string; towns: AreaTown[] };
+
+export type Worker = {
+  id: number;
+  device_id: string;
+  name: string;
+  phone: string | null;
+  district: string | null;
+  town: string | null;
+  union_council: string | null;
+};
+
+export async function getAreas(): Promise<AreaDistrict[]> {
+  const res = await fetch(`${apiBase}/api/areas`);
+  const json = await jsonOrThrow(res);
+  return json.districts ?? [];
+}
+
+export async function registerWorker(params: {
+  deviceId: string;
+  name: string;
+  phone?: string;
+  district?: string;
+  town?: string;
+  unionCouncil?: string;
+}): Promise<Worker> {
+  const res = await fetch(`${apiBase}/api/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({
+      device_id: params.deviceId,
+      name: params.name,
+      phone: params.phone,
+      district: params.district,
+      town: params.town,
+      union_council: params.unionCouncil,
+    }),
+  });
+  const json = await jsonOrThrow(res);
+  return json.worker;
+}
+
+export async function getWorker(deviceId: string): Promise<Worker | null> {
+  const res = await fetch(`${apiBase}/api/worker?device_id=${encodeURIComponent(deviceId)}`);
+  const json = await jsonOrThrow(res);
+  return json.worker ?? null;
 }

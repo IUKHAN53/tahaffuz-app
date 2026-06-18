@@ -46,6 +46,8 @@ import {
   type FeedbackRating,
 } from '../api';
 import { getDeviceId } from '../deviceId';
+import { getSessionLocation } from '../location';
+import type { LatLng } from '../api';
 import {
   getCachedQuickAnswers,
   refreshQuickAnswersCache,
@@ -515,6 +517,9 @@ export default function ChatScreen({ route, navigation }: Props) {
 
   const listRef = useRef<FlatList<Msg>>(null);
   const messagesRef = useRef<Msg[]>([]);
+  // Captured once per session; sent with messages so the assistant can answer
+  // "where is my nearest site?". Null until granted/fixed (sent omitted then).
+  const locationRef = useRef<LatLng | null>(null);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder);
   // Plays the server's natural Gemini TTS (reliable for ur/en/rud, where the
@@ -551,6 +556,11 @@ export default function ChatScreen({ route, navigation }: Props) {
     (async () => {
       const id = await getDeviceId();
       setDeviceId(id);
+      // Grab a location fix in the background so it's ready by the time the
+      // user asks about a site. Never blocks; stays null if denied.
+      getSessionLocation().then((loc) => {
+        locationRef.current = loc;
+      });
       try {
         const perm = await AudioModule.requestRecordingPermissionsAsync();
         if (perm.granted) {
@@ -802,7 +812,7 @@ export default function ChatScreen({ route, navigation }: Props) {
       let sawDelta = false;
       try {
         const res = await sendTextStream(
-          { deviceId, message: text, chatId, language },
+          { deviceId, message: text, chatId, language, location: locationRef.current },
           {
             onMeta: (id) => setChatId(id),
             onDelta: () => {
@@ -820,7 +830,7 @@ export default function ChatScreen({ route, navigation }: Props) {
         } else {
           // Streaming unavailable — fall back to the plain request/response endpoint.
           try {
-            const res = await sendText({ deviceId, message: text, chatId, language });
+            const res = await sendText({ deviceId, message: text, chatId, language, location: locationRef.current });
             setChatId(res.chat_id);
             persistSession(res.chat_id, titleForCache);
             await revealWithAudio(placeholderId, res.reply.content, res.reply.id);
@@ -881,7 +891,7 @@ export default function ChatScreen({ route, navigation }: Props) {
       ]);
       scroll();
 
-      const res = await sendAudio({ deviceId, audioUri: uri, audioMime: 'audio/m4a', chatId, language });
+      const res = await sendAudio({ deviceId, audioUri: uri, audioMime: 'audio/m4a', chatId, language, location: locationRef.current });
       setChatId(res.chat_id);
       const transcript = res.transcript?.trim() || strings.voiceTranscriptFallback;
       const freshTitle = isPlaceholderTitleText(chatTitle) && !chatId;
