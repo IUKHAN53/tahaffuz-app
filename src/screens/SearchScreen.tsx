@@ -47,13 +47,13 @@ const COPY: Record<AppLanguage, Strings> = {
     searchFail: 'تلاش ناکام۔ دوبارہ کوشش کریں۔',
     youBadge: 'آپ',
   },
-  rud: {
-    title: 'Talash',
-    placeholder: 'Apne sawalat aur jawabat talash karein...',
-    hintStart: 'Talash ke liye kam az kam 2 huroof likhein.',
-    noResults: 'Koi nateeja nahi mila. Dusre alfaz try karein.',
-    searchFail: 'Talash nakaam. Dobara koshish karein.',
-    youBadge: 'Aap',
+  fa: {
+    title: 'جستجو',
+    placeholder: 'پرسش‌ها و پاسخ‌های خود را جستجو کنید...',
+    hintStart: 'برای جستجو حداقل ۲ حرف بنویسید.',
+    noResults: 'نتیجه‌ای یافت نشد. کلمات دیگری را امتحان کنید.',
+    searchFail: 'جستجو ناموفق بود. دوباره تلاش کنید.',
+    youBadge: 'شما',
   },
   ps: {
     title: 'لټون',
@@ -121,7 +121,7 @@ export default function SearchScreen({ navigation }: Props) {
   const theme = useTheme();
   const { language } = useLanguage();
   const s = COPY[language];
-  const rtl = language === 'ur' || language === 'ps' || language === 'sd';
+  const rtl = language === 'ur' || language === 'fa' || language === 'ps' || language === 'sd';
 
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [query, setQuery] = useState('');

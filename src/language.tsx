@@ -12,17 +12,17 @@ import {
 import type { ReplyLanguage } from './api';
 
 /** The app's UI + reply language. Shared by every screen. */
-export type AppLanguage = ReplyLanguage; // 'en' | 'ur' | 'rud'
+export type AppLanguage = ReplyLanguage; // 'en' | 'ur' | 'fa' | 'ps' | 'sd'
 
 const STORAGE_KEY = 'tahaffuz.language.v1';
 const DEFAULT_LANGUAGE: AppLanguage = 'en';
 
 const isAppLanguage = (v: unknown): v is AppLanguage =>
-  v === 'en' || v === 'ur' || v === 'rud' || v === 'ps' || v === 'sd';
+  v === 'en' || v === 'ur' || v === 'fa' || v === 'ps' || v === 'sd';
 
-/** True when the language is written right-to-left (Urdu, Pashto, Sindhi script). */
+/** True when the language is written right-to-left (Urdu, Farsi, Pashto, Sindhi). */
 export const isRtl = (lang: AppLanguage): boolean =>
-  lang === 'ur' || lang === 'ps' || lang === 'sd';
+  lang === 'ur' || lang === 'fa' || lang === 'ps' || lang === 'sd';
 
 type LanguageContextValue = {
   language: AppLanguage;

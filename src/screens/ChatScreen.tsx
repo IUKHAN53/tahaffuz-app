@@ -167,39 +167,39 @@ const COPY: Record<ReplyLanguage, Strings> = {
     saveHint: 'بعد میں کے لیے محفوظ',
     offlineNote: 'آپ آف لائن ہیں — محفوظ شدہ جواب دکھایا جا رہا ہے۔',
   },
-  rud: {
-    newChat: 'Naya chat',
-    eyebrow: 'AAPKA VACCINE HELPER',
-    greeting: 'Assalam-o-Alaikum! Main aaj aapki kaise madad kar sakta hoon?',
-    greetingHint: 'Main vaccine, cold chain, aur immunization ke baare mein sawalon ka jawab de sakta hoon.',
-    voicePrompt: 'Aap apna sawal bolne ke liye mic bhi daba sakte hain!',
+  fa: {
+    newChat: 'گفتگوی جدید',
+    eyebrow: 'دستیار واکسن شما',
+    greeting: 'سلام! امروز چطور می‌توانم کمکتان کنم؟',
+    greetingHint: 'می‌توانم به پرسش‌های شما درباره واکسن، زنجیره سرد و واکسیناسیون پاسخ دهم.',
+    voicePrompt: 'برای گفتن پرسش‌تان می‌توانید میکروفون را هم لمس کنید!',
     suggestions: [
-      'Vaccine kis temperature par rakhni chahiye?',
-      'Polio vaccine kab lagai jati hai?',
-      'BCG vaccine kya rokti hai?',
+      'واکسن در چه دمایی باید نگهداری شود؟',
+      'واکسن فلج اطفال چه زمانی داده می‌شود؟',
+      'واکسن ب‌ث‌ژ از چه بیماری جلوگیری می‌کند؟',
     ],
     quickReplies: [
-      'Mazeed batayen',
-      'Iske side effects kya hain?',
-      'Ye kab deni chahiye?',
+      'بیشتر توضیح دهید',
+      'عوارض آن چیست؟',
+      'چه زمانی باید داده شود؟',
     ],
-    placeholder: 'Apna sawal yahan likhein...',
-    errorLoad: 'Chat load nahi ho saki. Please dobara try karein.',
-    errorNet: 'Internet connection nahi hai. Please check karein.',
-    errorMic: 'Mic istemal nahi ho saka. Please permission dein.',
-    errorNoAudio: 'Koi audio record nahi hui. Dobara try karein.',
-    errorVoice: 'Awaaz process nahi ho saki. Please likh kar bhejein.',
-    voicePlaceholder: 'Sun raha hoon...',
-    voiceTranscriptFallback: 'Awaaz ka paigham',
-    snackbarClose: 'Theek hai',
-    micHint: 'Bolne ke liye mic dabayein',
-    micHintStop: 'Awaaz bhejne ke liye dabayein',
-    copied: 'Jawab copy ho gaya!',
-    retry: 'Dobara koshish',
-    helpfulHint: 'Isse humein behtar hone mein madad milti hai',
-    notHelpfulHint: 'Hum behtar karenge',
-    saveHint: 'Baad mein ke liye save',
-    offlineNote: 'Aap offline hain — saved jawab dikhaya ja raha hai.',
+    placeholder: 'پرسش خود را اینجا بنویسید...',
+    errorLoad: 'گفتگو بارگذاری نشد. لطفاً دوباره تلاش کنید.',
+    errorNet: 'اتصال اینترنت نیست. لطفاً بررسی کنید و دوباره تلاش کنید.',
+    errorMic: 'دسترسی به میکروفون ممکن نشد. لطفاً اجازه دهید.',
+    errorNoAudio: 'هیچ صدایی ضبط نشد. لطفاً دوباره تلاش کنید.',
+    errorVoice: 'پردازش صدا ممکن نشد. لطفاً تایپ کنید.',
+    voicePlaceholder: 'در حال شنیدن...',
+    voiceTranscriptFallback: 'پیام صوتی',
+    snackbarClose: 'باشه',
+    micHint: 'برای صحبت میکروفون را لمس کنید',
+    micHintStop: 'برای ارسال صدا لمس کنید',
+    copied: 'پاسخ کپی شد!',
+    retry: 'تلاش دوباره',
+    helpfulHint: 'این به بهتر شدن ما کمک می‌کند',
+    notHelpfulHint: 'بهتر خواهیم کرد',
+    saveHint: 'برای بعد ذخیره شد',
+    offlineNote: 'شما آفلاین هستید — پاسخ ذخیره‌شده نمایش داده می‌شود.',
   },
   ps: {
     newChat: 'نوې خبرې',
@@ -276,7 +276,7 @@ const COPY: Record<ReplyLanguage, Strings> = {
 const TTS_LANG: Record<ReplyLanguage, string> = {
   en: 'en-US',
   ur: 'ur-PK',
-  rud: 'ur-PK',
+  fa: 'fa-IR',
   ps: 'ps-AF',
   sd: 'sd-PK',
 };
@@ -316,12 +316,14 @@ function stripMarkdownForSpeech(text: string): string {
 function ttsLangForText(text: string, appLang: ReplyLanguage): ReplyLanguage {
   if (/[ټډړږښځڅېګڼ]/.test(text)) return 'ps';
   if (/[ڳڻڪھڀٺٽ۾]/.test(text)) return 'sd';
-  if (/[؀-ۿ]/.test(text)) return 'ur'; // any other Arabic script → Urdu
-  return appLang === 'rud' ? 'rud' : 'en';
+  // Farsi and Urdu share the Arabic script and can't be told apart by letters,
+  // so for Arabic-script text trust the selected language (fa vs ur).
+  if (/[؀-ۿ]/.test(text)) return appLang === 'fa' ? 'fa' : 'ur';
+  return 'en';
 }
 
 const isPlaceholderTitleText = (t: string) =>
-  t === COPY.en.newChat || t === COPY.ur.newChat || t === COPY.rud.newChat ||
+  t === COPY.en.newChat || t === COPY.ur.newChat || t === COPY.fa.newChat ||
   t === COPY.ps.newChat || t === COPY.sd.newChat;
 
 // Markdown styles for bot messages (LTR)
@@ -493,7 +495,7 @@ export default function ChatScreen({ route, navigation }: Props) {
   const theme = useTheme();
   const { language } = useLanguage();
   const strings = COPY[language];
-  const isRtl = language === 'ur' || language === 'ps' || language === 'sd';
+  const isRtl = language === 'ur' || language === 'fa' || language === 'ps' || language === 'sd';
   // The chat to show is driven by route params: a chatId to open an existing
   // chat, or null + a `fresh` nonce to force a brand-new chat.
   const paramChatId = route.params?.chatId ?? null;
@@ -941,7 +943,7 @@ export default function ChatScreen({ route, navigation }: Props) {
         </View>
 
         <Text style={[styles.suggestionsLabel, isRtl ? styles.rtl : null]}>
-          {language === 'en' ? 'Try asking:' : language === 'ur' ? 'یہ پوچھیں:' : language === 'rud' ? 'Ye poochein:' : language === 'ps' ? 'دا وپوښتئ:' : 'هي پڇو:'}
+          {language === 'en' ? 'Try asking:' : language === 'ur' ? 'یہ پوچھیں:' : language === 'fa' ? 'این‌ها را بپرسید:' : language === 'ps' ? 'دا وپوښتئ:' : 'هي پڇو:'}
         </Text>
         <View style={styles.suggestions}>
           {strings.suggestions.map((q, index) => (

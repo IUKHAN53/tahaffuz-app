@@ -50,14 +50,14 @@ const COPY: Record<AppLanguage, Strings> = {
     removed: 'محفوظ جوابات سے حذف ہو گیا۔',
     openHint: 'پوری گفتگو کھولنے کے لیے دبائیں',
   },
-  rud: {
-    title: 'Saved Jawabat',
-    emptyHeadline: 'Abhi koi saved jawab nahi',
-    emptyHint: 'Kisi bhi jawab par bookmark icon dabayen take wo yahan save ho jaye.',
-    loadFail: 'Saved jawabat load nahi ho sake. Dobara try karein.',
-    deleteFail: 'Remove nahi ho saka. Dobara try karein.',
-    removed: 'Saved jawabat se remove ho gaya.',
-    openHint: 'Poori guftagu kholne ke liye dabayen',
+  fa: {
+    title: 'پاسخ‌های ذخیره‌شده',
+    emptyHeadline: 'هنوز پاسخ ذخیره‌شده‌ای نیست',
+    emptyHint: 'روی نشان بوک‌مارک هر پاسخ بزنید تا اینجا ذخیره شود.',
+    loadFail: 'پاسخ‌های ذخیره‌شده بارگذاری نشد. دوباره تلاش کنید.',
+    deleteFail: 'حذف نشد. دوباره تلاش کنید.',
+    removed: 'از پاسخ‌های ذخیره‌شده حذف شد.',
+    openHint: 'برای باز کردن کل گفتگو بزنید',
   },
   ps: {
     title: 'خوندي ځوابونه',
@@ -140,7 +140,7 @@ export default function BookmarksScreen({ navigation }: Props) {
   const theme = useTheme();
   const { language } = useLanguage();
   const s = COPY[language];
-  const rtl = language === 'ur' || language === 'ps' || language === 'sd';
+  const rtl = language === 'ur' || language === 'fa' || language === 'ps' || language === 'sd';
 
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [items, setItems] = useState<Bookmark[]>([]);

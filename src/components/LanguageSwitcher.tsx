@@ -8,7 +8,7 @@ import { brand } from '../theme';
 const LANGUAGES: { value: AppLanguage; label: string; native: string }[] = [
   { value: 'en', label: 'English', native: 'English' },
   { value: 'ur', label: 'Urdu', native: 'اردو' },
-  { value: 'rud', label: 'Roman Urdu', native: 'Roman' },
+  { value: 'fa', label: 'Farsi', native: 'فارسی' },
   { value: 'ps', label: 'Pashto', native: 'پښتو' },
   { value: 'sd', label: 'Sindhi', native: 'سنڌي' },
 ];
@@ -16,7 +16,7 @@ const LANGUAGES: { value: AppLanguage; label: string; native: string }[] = [
 const SHORT_LABELS: Record<AppLanguage, string> = {
   en: 'EN',
   ur: 'اردو',
-  rud: 'Ro',
+  fa: 'فارسی',
   ps: 'پښ',
   sd: 'سن',
 };

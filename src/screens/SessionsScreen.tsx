@@ -88,22 +88,22 @@ const COPY: Record<AppLanguage, Strings> = {
     deleteFail: 'سرور پر حذف ناکام۔',
     time: { now: 'ابھی', min: ' منٹ پہلے', hr: ' گھنٹے پہلے', day: ' دن پہلے' },
   },
-  rud: {
-    tag: 'VACCINATOR · AI MUAVIN',
-    statChats: 'CHATS',
-    statToday: 'AAJ',
-    getStarted: 'SHURUAAT',
-    readyHeadline: 'Aap ka muavin tayyar hai.',
-    readyHint: 'Vaccine, cold chain, schedule, ya session monitoring ke baare mein poochein.',
-    startChat: 'Nayi guftagu shuru karein',
-    untitled: 'Be-unwan guftagu',
-    deleteTitle: 'Yeh guftagu delete karein?',
-    deleteBody: (t) => `"${t}" hamesha ke liye delete ho jayegi.`,
-    cancel: 'Mansookh',
-    delete: 'Delete karein',
-    refreshFail: 'Refresh nahi ho saka — saved dikhaya ja raha hai.',
-    deleteFail: 'Server par delete nakaam.',
-    time: { now: 'abhi', min: ' min pehle', hr: ' ghante pehle', day: ' din pehle' },
+  fa: {
+    tag: 'واکسیناتور · دستیار هوش مصنوعی',
+    statChats: 'گفتگوها',
+    statToday: 'امروز',
+    getStarted: 'شروع',
+    readyHeadline: 'دستیار شما آماده است.',
+    readyHint: 'درباره واکسن، زنجیره سرد، برنامه یا نظارت بر جلسه بپرسید.',
+    startChat: 'گفتگوی جدید را شروع کنید',
+    untitled: 'گفتگوی بدون عنوان',
+    deleteTitle: 'این گفتگو حذف شود؟',
+    deleteBody: (t) => `«${t}» برای همیشه حذف خواهد شد.`,
+    cancel: 'لغو',
+    delete: 'حذف',
+    refreshFail: 'تازه‌سازی نشد — نسخه ذخیره‌شده نمایش داده می‌شود.',
+    deleteFail: 'حذف در سرور ناموفق بود.',
+    time: { now: 'اکنون', min: ' دقیقه پیش', hr: ' ساعت پیش', day: ' روز پیش' },
   },
   ps: {
     tag: 'واکسینیټر · اے آئی مرستندویه',
@@ -217,7 +217,7 @@ export default function SessionsScreen({ navigation }: Props) {
   const theme = useTheme();
   const { language } = useLanguage();
   const s = COPY[language];
-  const rtl = language === 'ur' || language === 'ps' || language === 'sd';
+  const rtl = language === 'ur' || language === 'fa' || language === 'ps' || language === 'sd';
 
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [sessions, setSessions] = useState<LocalSession[]>([]);
