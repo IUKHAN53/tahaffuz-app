@@ -13,6 +13,7 @@ import ChatScreen from './src/screens/ChatScreen';
 import BookmarksScreen from './src/screens/BookmarksScreen';
 import SearchScreen from './src/screens/SearchScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
+import ScanCardScreen from './src/screens/ScanCardScreen';
 import { paperTheme } from './src/theme';
 import { LanguageProvider } from './src/language';
 import { isRegistered } from './src/registration';
@@ -77,6 +78,7 @@ export default function App() {
                 />
                 <Stack.Screen name="Bookmarks" component={BookmarksScreen} />
                 <Stack.Screen name="Search" component={SearchScreen} />
+                <Stack.Screen name="ScanCard" component={ScanCardScreen} />
               </Stack.Navigator>
             </NavigationContainer>
           </PaperProvider>

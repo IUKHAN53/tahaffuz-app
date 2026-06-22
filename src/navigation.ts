@@ -4,4 +4,5 @@ export type RootStackParamList = {
   Sessions: undefined;
   Bookmarks: undefined;
   Search: undefined;
+  ScanCard: undefined;
 };

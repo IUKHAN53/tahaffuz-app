@@ -508,3 +508,59 @@ export async function getWorker(deviceId: string): Promise<Worker | null> {
   const json = await jsonOrThrow(res);
   return json.worker ?? null;
 }
+
+// Vaccination card scanner
+export type CardVaccine = { name: string; given_date?: string; due_date?: string };
+
+export type CardData = {
+  child_name?: string;
+  sex?: string;
+  date_of_birth?: string;
+  father_name?: string;
+  mother_name?: string;
+  card_number?: string;
+  district?: string;
+  town?: string;
+  union_council?: string;
+  next_due_date?: string;
+  vaccines?: CardVaccine[];
+};
+
+/** Upload a card photo; returns the AI-extracted fields for review (not stored). */
+export async function scanCard(params: {
+  deviceId: string;
+  imageUri: string;
+}): Promise<{ imagePath: string; data: CardData }> {
+  const form = new FormData();
+  form.append('device_id', params.deviceId);
+  form.append('image', {
+    uri: params.imageUri,
+    name: 'card.jpg',
+    type: 'image/jpeg',
+  } as unknown as Blob);
+  const res = await fetch(`${apiBase}/api/card/scan`, {
+    method: 'POST',
+    headers: { Accept: 'application/json' },
+    body: form,
+  });
+  const json = await jsonOrThrow(res);
+  return { imagePath: json.image_path, data: json.data ?? {} };
+}
+
+/** Save the worker-confirmed card. */
+export async function storeCard(params: {
+  deviceId: string;
+  imagePath?: string;
+  data: CardData;
+}): Promise<void> {
+  const res = await fetch(`${apiBase}/api/card`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({
+      device_id: params.deviceId,
+      image_path: params.imagePath,
+      ...params.data,
+    }),
+  });
+  await jsonOrThrow(res);
+}

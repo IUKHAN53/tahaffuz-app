@@ -2,7 +2,7 @@
   "expo": {
     "name": "Tahaffuz",
     "slug": "tahaffuz",
-    "version": "0.3.1",
+    "version": "0.4.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -24,7 +24,8 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION"
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.CAMERA"
       ]
     },
     "extra": {
@@ -44,6 +45,13 @@
         "expo-location",
         {
           "locationWhenInUsePermission": "Tahaffuz uses your location to find your nearest vaccination site."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Tahaffuz uses your camera to scan a child's vaccination card.",
+          "photosPermission": "Tahaffuz needs access to your photos to scan a vaccination card."
         }
       ],
       "expo-asset"

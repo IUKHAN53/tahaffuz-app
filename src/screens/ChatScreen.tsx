@@ -1050,6 +1050,15 @@ export default function ChatScreen({ route, navigation }: Props) {
           <View style={styles.headerActions}>
             <LanguageSwitcher />
             <Pressable
+              onPress={() => navigation.navigate('ScanCard')}
+              android_ripple={{ color: 'rgba(244,238,227,0.2)', borderless: true }}
+              style={styles.headerIconBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Scan vaccination card"
+            >
+              <Icon source="card-account-details-outline" size={22} color={brand.cream} />
+            </Pressable>
+            <Pressable
               onPress={startNewChat}
               android_ripple={{ color: 'rgba(244,238,227,0.2)', borderless: true }}
               style={styles.headerIconBtn}
