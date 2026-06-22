@@ -16,7 +16,6 @@ import { scanCard, storeCard, type CardData, type CardVaccine } from '../api';
 import { getDeviceId } from '../deviceId';
 import { useLanguage, type AppLanguage } from '../language';
 import { brand } from '../theme';
-import { BrandMark } from '../components/BrandMark';
 import { TypingDots } from '../components/TypingDots';
 import type { RootStackParamList } from '../navigation';
 
@@ -44,6 +43,7 @@ type Strings = {
   save: string;
   saved: string;
   scanFail: string;
+  notCard: string;
   saveFail: string;
 };
 
@@ -53,35 +53,40 @@ const COPY: Record<AppLanguage, Strings> = {
     takePhoto: 'Take photo', fromGallery: 'Choose from gallery', reading: 'Reading the card…', review: 'Check the details and fix anything, then save.',
     child: 'Child name', sex: 'Sex', dob: 'Date of birth', father: 'Father', mother: 'Mother', cardNo: 'Card number', uc: 'Union Council', nextDue: 'Next due date',
     vaccines: 'Vaccines given', vaccineName: 'Vaccine', givenDate: 'Date', addVaccine: 'Add vaccine', save: 'Save card', saved: 'Card saved.',
-    scanFail: 'Could not read the card. Try a clearer photo.', saveFail: 'Could not save. Please try again.',
+    scanFail: 'Could not read the card. Try a clearer photo.',
+    notCard: 'This doesn’t look like a vaccination card. Please scan a child’s immunization card.', saveFail: 'Could not save. Please try again.',
   },
   ur: {
     title: 'ویکسینیشن کارڈ اسکین کریں', intro: 'بچے کے حفاظتی ٹیکوں کے کارڈ کی واضح تصویر لیں۔ معاون اسے پڑھے گا؛ محفوظ کرنے سے پہلے آپ تصحیح کر سکتے ہیں۔',
     takePhoto: 'تصویر لیں', fromGallery: 'گیلری سے منتخب کریں', reading: 'کارڈ پڑھا جا رہا ہے…', review: 'تفصیلات چیک کریں اور درست کریں، پھر محفوظ کریں۔',
     child: 'بچے کا نام', sex: 'جنس', dob: 'تاریخ پیدائش', father: 'والد', mother: 'والدہ', cardNo: 'کارڈ نمبر', uc: 'یونین کونسل', nextDue: 'اگلی تاریخ',
     vaccines: 'لگائے گئے ٹیکے', vaccineName: 'ویکسین', givenDate: 'تاریخ', addVaccine: 'ویکسین شامل کریں', save: 'کارڈ محفوظ کریں', saved: 'کارڈ محفوظ ہو گیا۔',
-    scanFail: 'کارڈ پڑھا نہیں جا سکا۔ واضح تصویر لیں۔', saveFail: 'محفوظ نہیں ہو سکا۔ دوبارہ کوشش کریں۔',
+    scanFail: 'کارڈ پڑھا نہیں جا سکا۔ واضح تصویر لیں۔',
+    notCard: 'یہ ویکسینیشن کارڈ نہیں لگتا۔ براہ کرم بچے کا حفاظتی ٹیکوں کا کارڈ اسکین کریں۔', saveFail: 'محفوظ نہیں ہو سکا۔ دوبارہ کوشش کریں۔',
   },
   fa: {
     title: 'اسکن کارت واکسیناسیون', intro: 'از کارت واکسیناسیون کودک عکس واضح بگیرید. دستیار آن را می‌خواند؛ پیش از ذخیره می‌توانید اصلاح کنید.',
     takePhoto: 'گرفتن عکس', fromGallery: 'انتخاب از گالری', reading: 'در حال خواندن کارت…', review: 'جزئیات را بررسی و اصلاح کنید، سپس ذخیره کنید.',
     child: 'نام کودک', sex: 'جنسیت', dob: 'تاریخ تولد', father: 'پدر', mother: 'مادر', cardNo: 'شماره کارت', uc: 'شورای اتحادیه', nextDue: 'تاریخ بعدی',
     vaccines: 'واکسن‌های زده‌شده', vaccineName: 'واکسن', givenDate: 'تاریخ', addVaccine: 'افزودن واکسن', save: 'ذخیره کارت', saved: 'کارت ذخیره شد.',
-    scanFail: 'کارت خوانده نشد. عکس واضح‌تری بگیرید.', saveFail: 'ذخیره نشد. دوباره تلاش کنید.',
+    scanFail: 'کارت خوانده نشد. عکس واضح‌تری بگیرید.',
+    notCard: 'این کارت واکسیناسیون به نظر نمی‌رسد. لطفاً کارت واکسیناسیون کودک را اسکن کنید.', saveFail: 'ذخیره نشد. دوباره تلاش کنید.',
   },
   ps: {
     title: 'د واکسین کارت سکین کړئ', intro: 'د ماشوم د واکسین د کارت روښانه عکس واخلئ. مرستندویه به یې ولولي؛ د خوندي کولو دمخه یې سمولی شئ.',
     takePhoto: 'عکس واخلئ', fromGallery: 'له ګالرۍ وټاکئ', reading: 'کارت لوستل کیږي…', review: 'جزئیات وګورئ او سم کړئ، بیا خوندي کړئ.',
     child: 'د ماشوم نوم', sex: 'جنس', dob: 'د زیږون نیټه', father: 'پلار', mother: 'مور', cardNo: 'د کارت شمیره', uc: 'یونین کونسل', nextDue: 'راتلونکې نیټه',
     vaccines: 'ورکړل شوي واکسینونه', vaccineName: 'واکسین', givenDate: 'نیټه', addVaccine: 'واکسین زیات کړئ', save: 'کارت خوندي کړئ', saved: 'کارت خوندي شو.',
-    scanFail: 'کارت لوستل نشو. روښانه عکس واخلئ.', saveFail: 'خوندي نشو. بیا هڅه وکړئ.',
+    scanFail: 'کارت لوستل نشو. روښانه عکس واخلئ.',
+    notCard: 'دا د واکسین کارت نه ښکاري. مهرباني وکړئ د ماشوم د واکسین کارت سکین کړئ.', saveFail: 'خوندي نشو. بیا هڅه وکړئ.',
   },
   sd: {
     title: 'ويڪسينيشن ڪارڊ اسڪين ڪريو', intro: 'ٻار جي ويڪسينيشن ڪارڊ جي صاف تصوير وٺو. مددگار اهو پڙهندو؛ محفوظ ڪرڻ کان اڳ توهان درست ڪري سگهو ٿا.',
     takePhoto: 'تصوير وٺو', fromGallery: 'گيلري مان چونڊيو', reading: 'ڪارڊ پڙهجي رهيو آهي…', review: 'تفصيل چيڪ ڪري درست ڪريو، پوءِ محفوظ ڪريو.',
     child: 'ٻار جو نالو', sex: 'جنس', dob: 'ڄم جي تاريخ', father: 'پيءُ', mother: 'ماءُ', cardNo: 'ڪارڊ نمبر', uc: 'يونين ڪائونسل', nextDue: 'ايندڙ تاريخ',
     vaccines: 'لڳل ويڪسين', vaccineName: 'ويڪسين', givenDate: 'تاريخ', addVaccine: 'ويڪسين شامل ڪريو', save: 'ڪارڊ محفوظ ڪريو', saved: 'ڪارڊ محفوظ ٿيو.',
-    scanFail: 'ڪارڊ پڙهي نه سگهيو. صاف تصوير وٺو.', saveFail: 'محفوظ نه ٿيو. ٻيهر ڪوشش ڪريو.',
+    scanFail: 'ڪارڊ پڙهي نه سگهيو. صاف تصوير وٺو.',
+    notCard: 'هي ويڪسينيشن ڪارڊ نٿو لڳي. مهرباني ڪري ٻار جو ويڪسينيشن ڪارڊ اسڪين ڪريو.', saveFail: 'محفوظ نه ٿيو. ٻيهر ڪوشش ڪريو.',
   },
 };
 
@@ -118,8 +123,8 @@ export default function ScanCardScreen({ navigation }: Props) {
       setData(extracted);
       setVaccines(extracted.vaccines ?? []);
       setMode('review');
-    } catch {
-      setError(s.scanFail);
+    } catch (e: any) {
+      setError(e?.message === 'NOT_A_CARD' ? s.notCard : s.scanFail);
       setMode('capture');
     }
   };

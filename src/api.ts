@@ -543,6 +543,11 @@ export async function scanCard(params: {
     headers: { Accept: 'application/json' },
     body: form,
   });
+  // The backend rejects images that aren't vaccination cards with 422.
+  if (res.status === 422) {
+    const j = await res.json().catch(() => ({}));
+    throw new Error(j?.error === 'not_a_card' ? 'NOT_A_CARD' : 'scan failed');
+  }
   const json = await jsonOrThrow(res);
   return { imagePath: json.image_path, data: json.data ?? {} };
 }
