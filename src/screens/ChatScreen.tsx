@@ -3,6 +3,7 @@ import {
   Animated,
   Easing,
   FlatList,
+  Linking,
   Platform,
   Pressable,
   Share,
@@ -418,7 +419,16 @@ const MessageBubble = memo(function MessageBubble({
                 {item.content}
               </Text>
             ) : (
-              <Markdown style={isRtl ? mdStylesBotRtl : mdStylesBot}>{item.content}</Markdown>
+              <Markdown
+                style={isRtl ? mdStylesBotRtl : mdStylesBot}
+                onLinkPress={(url) => {
+                  // Open Google Maps pins (and any other links) in the maps/browser app.
+                  Linking.openURL(url).catch(() => {});
+                  return false;
+                }}
+              >
+                {item.content}
+              </Markdown>
             )}
           </Pressable>
           {/* Play button on the right for user messages */}
@@ -1110,6 +1120,16 @@ export default function ChatScreen({ route, navigation }: Props) {
 
           <View style={styles.composerWrap}>
             <View style={styles.composer}>
+              <Pressable
+                onPress={() => navigation.navigate('ScanCard')}
+                disabled={busy}
+                android_ripple={{ color: 'rgba(7,32,63,0.10)', borderless: true }}
+                style={({ pressed }) => [styles.scanBtn, pressed && { opacity: 0.6 }]}
+                accessibilityRole="button"
+                accessibilityLabel="Scan vaccination card"
+              >
+                <Icon source="card-account-details-outline" size={24} color={brand.indigo} />
+              </Pressable>
               <TextInput
                 mode="flat"
                 dense
@@ -1491,6 +1511,16 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   inputContent: { color: brand.ink },
+
+  scanBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(20,60,108,0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
 
   micBtn: {
     width: 52,
