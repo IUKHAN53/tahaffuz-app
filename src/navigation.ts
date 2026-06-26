@@ -5,4 +5,5 @@ export type RootStackParamList = {
   Bookmarks: undefined;
   Search: undefined;
   ScanCard: undefined;
+  Memory: undefined;
 };

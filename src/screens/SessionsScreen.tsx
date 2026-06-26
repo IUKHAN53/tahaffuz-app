@@ -345,6 +345,15 @@ export default function SessionsScreen({ navigation }: Props) {
               >
                 <Icon source="bookmark-outline" size={22} color={brand.cream} />
               </Pressable>
+              <Pressable
+                onPress={() => navigation.navigate('Memory')}
+                android_ripple={{ color: 'rgba(244,238,227,0.2)', borderless: true }}
+                style={styles.headerIconBtn}
+                accessibilityRole="button"
+                accessibilityLabel="What the assistant remembers"
+              >
+                <Icon source="brain" size={22} color={brand.cream} />
+              </Pressable>
               <LanguageSwitcher />
             </View>
           </View>

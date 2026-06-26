@@ -276,6 +276,23 @@ export async function deleteChat(deviceId: string, chatId: number): Promise<void
 
 export const API_BASE = apiBase;
 
+// Memory API — what the assistant remembers about the worker / current child.
+export type MemoryItem = { id: number; kind: 'child_fact' | 'fact'; content: string; chat_id: number | null };
+
+export async function getMemories(deviceId: string): Promise<{ scope: string; memories: MemoryItem[] }> {
+  const res = await fetch(`${apiBase}/api/memories?device_id=${encodeURIComponent(deviceId)}`);
+  const json = await jsonOrThrow(res);
+  return { scope: json.scope ?? 'chat', memories: json.memories ?? [] };
+}
+
+export async function clearMemories(deviceId: string): Promise<number> {
+  const res = await fetch(`${apiBase}/api/memories?device_id=${encodeURIComponent(deviceId)}`, {
+    method: 'DELETE',
+  });
+  const json = await jsonOrThrow(res);
+  return json.cleared ?? 0;
+}
+
 // Feedback API
 export type FeedbackRating = 'up' | 'down';
 
