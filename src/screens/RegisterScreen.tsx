@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  FlatList,
+  Dimensions,
   Modal,
   Platform,
   Pressable,
@@ -130,6 +130,11 @@ const COPY: Record<AppLanguage, Strings> = {
     failed: 'محفوظ نه ٿي سگهيو. ڪنيڪشن چيڪ ڪري ٻيهر ڪوشش ڪريو.',
   },
 };
+
+// The picker sheet caps at ~60% of the screen and scrolls beyond that. Putting
+// the height bound on the scroll view (not an auto-height wrapper) is what keeps
+// the list from collapsing to zero height.
+const SHEET_MAX_HEIGHT = Math.round(Dimensions.get('window').height * 0.6);
 
 type Field = 'district' | 'town' | 'uc';
 
@@ -299,23 +304,25 @@ export default function RegisterScreen({ navigation }: Props) {
 
       <Modal visible={open !== null} transparent animationType="fade" onRequestClose={() => setOpen(null)}>
         <Pressable style={styles.modalBackdrop} onPress={() => setOpen(null)}>
-          <View style={styles.modalSheet}>
-            <FlatList
-              data={options}
-              keyExtractor={(item, i) => `${item}-${i}`}
-              keyboardShouldPersistTaps="handled"
-              renderItem={({ item }) => (
-                <Pressable
-                  onPress={() => pick(item)}
-                  android_ripple={{ color: 'rgba(7,32,63,0.06)' }}
-                  style={({ pressed }) => [styles.option, pressed && { opacity: 0.85 }]}
-                >
-                  <Text style={[styles.optionText, rtl ? styles.rtl : null]}>{item}</Text>
-                </Pressable>
+          {/* Tapping the sheet itself must not close the modal. */}
+          <Pressable style={styles.modalSheet} onPress={() => {}}>
+            <ScrollView style={styles.modalList} keyboardShouldPersistTaps="handled">
+              {options.length === 0 ? (
+                <Text style={styles.optionEmpty}>—</Text>
+              ) : (
+                options.map((item, i) => (
+                  <Pressable
+                    key={`${item}-${i}`}
+                    onPress={() => pick(item)}
+                    android_ripple={{ color: 'rgba(7,32,63,0.06)' }}
+                    style={({ pressed }) => [styles.option, pressed && { opacity: 0.85 }]}
+                  >
+                    <Text style={[styles.optionText, rtl ? styles.rtl : null]}>{item}</Text>
+                  </Pressable>
+                ))
               )}
-              ListEmptyComponent={<Text style={styles.optionEmpty}>—</Text>}
-            />
-          </View>
+            </ScrollView>
+          </Pressable>
         </Pressable>
       </Modal>
 
@@ -379,9 +386,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
-    maxHeight: '70%',
     paddingVertical: 8,
   },
+  modalList: { maxHeight: SHEET_MAX_HEIGHT },
   option: { paddingVertical: 16, paddingHorizontal: 24, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(7,32,63,0.08)' },
   optionText: { color: brand.ink, fontSize: 16 },
   optionEmpty: { textAlign: 'center', color: brand.indigoSoft, padding: 24 },
