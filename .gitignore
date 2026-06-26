@@ -42,3 +42,6 @@ yarn-error.*
 
 # Brand pipeline: font is fetched at build time by scripts/gen-icons.mjs
 scripts/.fonts/
+
+# Build artifacts
+*.apk
