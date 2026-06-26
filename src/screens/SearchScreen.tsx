@@ -98,7 +98,7 @@ const ResultCard = memo(function ResultCard({
       <View style={styles.cardTop}>
         <View style={[styles.roleBadge, isUser ? styles.roleBadgeUser : styles.roleBadgeBot]}>
           <Text style={[styles.roleBadgeText, isUser && { color: brand.cream }]}>
-            {isUser ? youBadge : 'Tahaffuz'}
+            {isUser ? youBadge : 'Tika Dost'}
           </Text>
         </View>
         {!!chatTitle && (

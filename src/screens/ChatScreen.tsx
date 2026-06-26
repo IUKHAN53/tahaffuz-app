@@ -782,7 +782,7 @@ export default function ChatScreen({ route, navigation }: Props) {
     try {
       await Share.share({
         message: text,
-        title: 'Tahaffuz',
+        title: 'Tika Dost',
       });
     } catch {}
   }, []);
@@ -1044,7 +1044,7 @@ export default function ChatScreen({ route, navigation }: Props) {
           <View style={styles.headerCenter}>
             <View style={styles.headerBrand}>
               <BrandMark size={22} />
-              <Text style={styles.headerBrandText}>Tahaffuz</Text>
+              <Text style={styles.headerBrandText}>Tika Dost</Text>
             </View>
           </View>
           <View style={styles.headerActions}>

@@ -45,7 +45,7 @@ type Strings = {
 
 const COPY: Record<AppLanguage, Strings> = {
   en: {
-    title: 'Welcome to Tahaffuz',
+    title: 'Welcome to Tika Dost',
     subtitle: 'Tell us a little about you to get started.',
     name: 'Your name',
     namePlaceholder: 'Enter your name',
@@ -62,7 +62,7 @@ const COPY: Record<AppLanguage, Strings> = {
     failed: 'Could not save. Please check your connection and try again.',
   },
   ur: {
-    title: 'تحفظ میں خوش آمدید',
+    title: 'ٹیکہ دوست میں خوش آمدید',
     subtitle: 'شروع کرنے کے لیے ہمیں اپنے بارے میں کچھ بتائیں۔',
     name: 'آپ کا نام',
     namePlaceholder: 'اپنا نام درج کریں',
@@ -79,7 +79,7 @@ const COPY: Record<AppLanguage, Strings> = {
     failed: 'محفوظ نہیں ہو سکا۔ کنکشن چیک کریں اور دوبارہ کوشش کریں۔',
   },
   fa: {
-    title: 'به تحفظ خوش آمدید',
+    title: 'به ٹیکہ دوست خوش آمدید',
     subtitle: 'برای شروع کمی درباره خودتان بگویید.',
     name: 'نام شما',
     namePlaceholder: 'نام خود را وارد کنید',
@@ -96,7 +96,7 @@ const COPY: Record<AppLanguage, Strings> = {
     failed: 'ذخیره نشد. اتصال را بررسی کنید و دوباره تلاش کنید.',
   },
   ps: {
-    title: 'تحفظ ته ښه راغلاست',
+    title: 'ٹیکہ دوست ته ښه راغلاست',
     subtitle: 'د پیل لپاره موږ ته د ځان په اړه یو څه ووایاست.',
     name: 'ستاسو نوم',
     namePlaceholder: 'خپل نوم ولیکئ',
@@ -113,7 +113,7 @@ const COPY: Record<AppLanguage, Strings> = {
     failed: 'خوندي نه شو. پیوستون وګورئ او بیا هڅه وکړئ.',
   },
   sd: {
-    title: 'تحفظ ۾ ڀليڪار',
+    title: 'ٹیکہ دوست ۾ ڀليڪار',
     subtitle: 'شروع ڪرڻ لاءِ اسان کي پنهنجي باري ۾ ٿورو ٻڌايو.',
     name: 'توهان جو نالو',
     namePlaceholder: 'پنهنجو نالو لکو',
@@ -234,7 +234,7 @@ export default function RegisterScreen({ navigation }: Props) {
         <View style={styles.headerTop}>
           <View style={styles.brandRow}>
             <BrandMark size={30} />
-            <Text style={styles.brandName}>Tahaffuz</Text>
+            <Text style={styles.brandName}>Tika Dost</Text>
           </View>
           <LanguageSwitcher />
         </View>

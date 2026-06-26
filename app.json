@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Tahaffuz",
+    "name": "Tika Dost",
     "slug": "tahaffuz",
     "version": "0.4.0",
     "orientation": "portrait",
@@ -38,20 +38,20 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "Tahaffuz uses your microphone for voice questions."
+          "microphonePermission": "Tika Dost uses your microphone for voice questions."
         }
       ],
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Tahaffuz uses your location to find your nearest vaccination site."
+          "locationWhenInUsePermission": "Tika Dost uses your location to find your nearest vaccination site."
         }
       ],
       [
         "expo-image-picker",
         {
-          "cameraPermission": "Tahaffuz uses your camera to scan a child's vaccination card.",
-          "photosPermission": "Tahaffuz needs access to your photos to scan a vaccination card."
+          "cameraPermission": "Tika Dost uses your camera to scan a child's vaccination card.",
+          "photosPermission": "Tika Dost needs access to your photos to scan a vaccination card."
         }
       ],
       "expo-asset"
