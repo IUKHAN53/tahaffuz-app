@@ -541,6 +541,15 @@ export default function ChatScreen({ route, navigation }: Props) {
     messagesRef.current = messages;
   }, [messages]);
 
+  // After a card scan, ScanCardScreen routes back here with a summary note —
+  // show it as an assistant bubble so the worker sees the fetched details in chat.
+  const paramCardNote = route.params?.cardNote;
+  useEffect(() => {
+    if (!paramCardNote) return;
+    setMessages((m) => [...m, { id: `card-${Date.now()}`, role: 'assistant', content: paramCardNote }]);
+    navigation.setParams({ cardNote: undefined });
+  }, [paramCardNote, navigation]);
+
   // Keep a local stash of popular Q&A pairs so common questions still get an
   // answer when the device has no connection. Never throws.
   useEffect(() => {

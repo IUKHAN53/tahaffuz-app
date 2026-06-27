@@ -586,3 +586,33 @@ export async function storeCard(params: {
   });
   await jsonOrThrow(res);
 }
+
+export type ScheduleSummary = {
+  overdue: string[];
+  next: { code: string; due_date: string | null } | null;
+  has_dob: boolean;
+};
+
+export type ScheduleRow = { code: string; due_date: string | null; status: string };
+
+export async function getCardSchedule(
+  deviceId: string,
+): Promise<{ child: string | null; has_dob: boolean; summary: ScheduleSummary | null; schedule: ScheduleRow[] }> {
+  const res = await fetch(`${apiBase}/api/card/schedule?device_id=${encodeURIComponent(deviceId)}`);
+  const json = await jsonOrThrow(res);
+  return { child: json.child ?? null, has_dob: !!json.has_dob, summary: json.summary ?? null, schedule: json.schedule ?? [] };
+}
+
+export type Defaulter = {
+  card_id: number;
+  child: string;
+  date_of_birth: string | null;
+  overdue: string[];
+  next: { code: string; due_date: string | null } | null;
+};
+
+export async function getDefaulters(deviceId: string): Promise<Defaulter[]> {
+  const res = await fetch(`${apiBase}/api/defaulters?device_id=${encodeURIComponent(deviceId)}`);
+  const json = await jsonOrThrow(res);
+  return json.defaulters ?? [];
+}

@@ -15,6 +15,7 @@ import SearchScreen from './src/screens/SearchScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
 import ScanCardScreen from './src/screens/ScanCardScreen';
 import MemoryScreen from './src/screens/MemoryScreen';
+import ScheduleScreen from './src/screens/ScheduleScreen';
 import { paperTheme } from './src/theme';
 import { LanguageProvider } from './src/language';
 import { isRegistered } from './src/registration';
@@ -81,6 +82,7 @@ export default function App() {
                 <Stack.Screen name="Search" component={SearchScreen} />
                 <Stack.Screen name="ScanCard" component={ScanCardScreen} />
                 <Stack.Screen name="Memory" component={MemoryScreen} />
+                <Stack.Screen name="Schedule" component={ScheduleScreen} />
               </Stack.Navigator>
             </NavigationContainer>
           </PaperProvider>

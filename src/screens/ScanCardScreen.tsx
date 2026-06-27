@@ -12,7 +12,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
-import { scanCard, storeCard, type CardData, type CardVaccine } from '../api';
+import { getCardSchedule, scanCard, storeCard, type CardData, type CardVaccine } from '../api';
 import { getDeviceId } from '../deviceId';
 import { useLanguage, type AppLanguage } from '../language';
 import { brand } from '../theme';
@@ -45,6 +45,11 @@ type Strings = {
   scanFail: string;
   notCard: string;
   saveFail: string;
+  noteSaved: string;
+  noteOverdue: string;
+  noteNext: string;
+  noteUpToDate: string;
+  noteNoDob: string;
 };
 
 const COPY: Record<AppLanguage, Strings> = {
@@ -55,6 +60,7 @@ const COPY: Record<AppLanguage, Strings> = {
     vaccines: 'Vaccines given', vaccineName: 'Vaccine', givenDate: 'Date', addVaccine: 'Add vaccine', save: 'Save card', saved: 'Card saved.',
     scanFail: 'Could not read the card. Try a clearer photo.',
     notCard: 'This doesn’t look like a vaccination card. Please scan a child’s immunization card.', saveFail: 'Could not save. Please try again.',
+    noteSaved: 'Card saved for', noteOverdue: 'Overdue', noteNext: 'Next due', noteUpToDate: 'No overdue vaccines — up to date.', noteNoDob: 'Date of birth unclear — please confirm the child’s age.',
   },
   ur: {
     title: 'ویکسینیشن کارڈ اسکین کریں', intro: 'بچے کے حفاظتی ٹیکوں کے کارڈ کی واضح تصویر لیں۔ معاون اسے پڑھے گا؛ محفوظ کرنے سے پہلے آپ تصحیح کر سکتے ہیں۔',
@@ -63,6 +69,7 @@ const COPY: Record<AppLanguage, Strings> = {
     vaccines: 'لگائے گئے ٹیکے', vaccineName: 'ویکسین', givenDate: 'تاریخ', addVaccine: 'ویکسین شامل کریں', save: 'کارڈ محفوظ کریں', saved: 'کارڈ محفوظ ہو گیا۔',
     scanFail: 'کارڈ پڑھا نہیں جا سکا۔ واضح تصویر لیں۔',
     notCard: 'یہ ویکسینیشن کارڈ نہیں لگتا۔ براہ کرم بچے کا حفاظتی ٹیکوں کا کارڈ اسکین کریں۔', saveFail: 'محفوظ نہیں ہو سکا۔ دوبارہ کوشش کریں۔',
+    noteSaved: 'کارڈ محفوظ ہوا —', noteOverdue: 'واجب الادا', noteNext: 'اگلا ٹیکہ', noteUpToDate: 'کوئی ٹیکہ باقی نہیں — اپ ٹو ڈیٹ۔', noteNoDob: 'تاریخ پیدائش واضح نہیں — بچے کی عمر کی تصدیق کریں۔',
   },
   fa: {
     title: 'اسکن کارت واکسیناسیون', intro: 'از کارت واکسیناسیون کودک عکس واضح بگیرید. دستیار آن را می‌خواند؛ پیش از ذخیره می‌توانید اصلاح کنید.',
@@ -71,6 +78,7 @@ const COPY: Record<AppLanguage, Strings> = {
     vaccines: 'واکسن‌های زده‌شده', vaccineName: 'واکسن', givenDate: 'تاریخ', addVaccine: 'افزودن واکسن', save: 'ذخیره کارت', saved: 'کارت ذخیره شد.',
     scanFail: 'کارت خوانده نشد. عکس واضح‌تری بگیرید.',
     notCard: 'این کارت واکسیناسیون به نظر نمی‌رسد. لطفاً کارت واکسیناسیون کودک را اسکن کنید.', saveFail: 'ذخیره نشد. دوباره تلاش کنید.',
+    noteSaved: 'کارت ذخیره شد برای', noteOverdue: 'عقب‌افتاده', noteNext: 'نوبت بعدی', noteUpToDate: 'واکسن عقب‌افتاده‌ای نیست — به‌روز است.', noteNoDob: 'تاریخ تولد نامشخص است — سن کودک را تأیید کنید.',
   },
   ps: {
     title: 'د واکسین کارت سکین کړئ', intro: 'د ماشوم د واکسین د کارت روښانه عکس واخلئ. مرستندویه به یې ولولي؛ د خوندي کولو دمخه یې سمولی شئ.',
@@ -79,6 +87,7 @@ const COPY: Record<AppLanguage, Strings> = {
     vaccines: 'ورکړل شوي واکسینونه', vaccineName: 'واکسین', givenDate: 'نیټه', addVaccine: 'واکسین زیات کړئ', save: 'کارت خوندي کړئ', saved: 'کارت خوندي شو.',
     scanFail: 'کارت لوستل نشو. روښانه عکس واخلئ.',
     notCard: 'دا د واکسین کارت نه ښکاري. مهرباني وکړئ د ماشوم د واکسین کارت سکین کړئ.', saveFail: 'خوندي نشو. بیا هڅه وکړئ.',
+    noteSaved: 'کارت خوندي شو د', noteOverdue: 'ناوخته', noteNext: 'راتلونکی', noteUpToDate: 'هیڅ ناوخته واکسین نشته — تازه دی.', noteNoDob: 'د زیږون نېټه روښانه نه ده — د ماشوم عمر تایید کړئ.',
   },
   sd: {
     title: 'ويڪسينيشن ڪارڊ اسڪين ڪريو', intro: 'ٻار جي ويڪسينيشن ڪارڊ جي صاف تصوير وٺو. مددگار اهو پڙهندو؛ محفوظ ڪرڻ کان اڳ توهان درست ڪري سگهو ٿا.',
@@ -87,6 +96,7 @@ const COPY: Record<AppLanguage, Strings> = {
     vaccines: 'لڳل ويڪسين', vaccineName: 'ويڪسين', givenDate: 'تاريخ', addVaccine: 'ويڪسين شامل ڪريو', save: 'ڪارڊ محفوظ ڪريو', saved: 'ڪارڊ محفوظ ٿيو.',
     scanFail: 'ڪارڊ پڙهي نه سگهيو. صاف تصوير وٺو.',
     notCard: 'هي ويڪسينيشن ڪارڊ نٿو لڳي. مهرباني ڪري ٻار جو ويڪسينيشن ڪارڊ اسڪين ڪريو.', saveFail: 'محفوظ نه ٿيو. ٻيهر ڪوشش ڪريو.',
+    noteSaved: 'ڪارڊ محفوظ ٿيو', noteOverdue: 'وقت گذري ويل', noteNext: 'ايندڙ', noteUpToDate: 'ڪو به ويڪسين باقي ناهي — اپ ٽو ڊيٽ.', noteNoDob: 'ڄم جي تاريخ واضح ناهي — ٻار جي عمر جي تصديق ڪريو.',
   },
 };
 
@@ -145,7 +155,29 @@ export default function ScanCardScreen({ navigation }: Props) {
         imagePath,
         data: { ...data, vaccines: vaccines.filter((v) => v.name?.trim()) },
       });
-      navigation.goBack();
+
+      // Build a summary to surface the fetched details back in the chat.
+      const child = data.child_name?.trim() || '';
+      let note = `**${s.noteSaved} ${child}**`.trim();
+      const recv = vaccines.map((v) => v.name?.trim()).filter(Boolean).join(', ');
+      if (recv) note += `\n${s.vaccines}: ${recv}`;
+      try {
+        const { summary, has_dob } = await getCardSchedule(deviceId);
+        if (!has_dob) {
+          note += `\n\n⚠️ ${s.noteNoDob}`;
+        } else if (summary) {
+          note += summary.overdue.length
+            ? `\n\n⚠️ **${s.noteOverdue}:** ${summary.overdue.join('; ')}`
+            : `\n\n✅ ${s.noteUpToDate}`;
+          if (summary.next) {
+            note += `\n➡️ **${s.noteNext}:** ${summary.next.code}${summary.next.due_date ? ` (${summary.next.due_date})` : ''}`;
+          }
+        }
+      } catch {
+        // schedule is best-effort; still show the saved confirmation
+      }
+
+      navigation.navigate({ name: 'Chat', params: { cardNote: note }, merge: true });
     } catch {
       setError(s.saveFail);
       setSaving(false);
