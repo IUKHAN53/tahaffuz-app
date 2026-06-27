@@ -12,6 +12,7 @@ import {
   Button,
   Dialog,
   Icon,
+  Menu,
   Portal,
   Snackbar,
   Text,
@@ -225,6 +226,16 @@ export default function SessionsScreen({ navigation }: Props) {
   const [loadingFirst, setLoadingFirst] = useState(true);
   const [snack, setSnack] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<LocalSession | null>(null);
+  const [actionsMenu, setActionsMenu] = useState(false);
+
+  // Header overflow-menu labels (keeps the top bar from overflowing).
+  const menuLabels = ({
+    en: { search: 'Search', saved: 'Saved answers', schedule: 'Vaccination schedule', memory: 'What I remember' },
+    ur: { search: 'تلاش', saved: 'محفوظ جوابات', schedule: 'ٹیکوں کا شیڈول', memory: 'یادداشت' },
+    fa: { search: 'جستجو', saved: 'پاسخ‌های ذخیره‌شده', schedule: 'برنامه واکسیناسیون', memory: 'حافظه' },
+    ps: { search: 'لټون', saved: 'خوندي ځوابونه', schedule: 'د واکسین مهالویش', memory: 'حافظه' },
+    sd: { search: 'ڳولا', saved: 'محفوظ جواب', schedule: 'ويڪسين شيڊول', memory: 'يادداشت' },
+  } as Record<AppLanguage, { search: string; saved: string; schedule: string; memory: string }>)[language];
 
   const refresh = useCallback(
     async (id: string) => {
@@ -319,7 +330,7 @@ export default function SessionsScreen({ navigation }: Props) {
             <View style={styles.headerBrandRow}>
               <View style={styles.headerBrandText}>
                 <View style={styles.headerNameRow}>
-                  <Text style={styles.headerBrandName}>Chats</Text>
+                  <Text style={styles.headerBrandName} numberOfLines={1}>Chats</Text>
                   {APP_VERSION !== '' && (
                     <Text style={styles.headerVersion}>v{APP_VERSION}</Text>
                   )}
@@ -327,42 +338,26 @@ export default function SessionsScreen({ navigation }: Props) {
               </View>
             </View>
             <View style={styles.headerActions}>
-              <Pressable
-                onPress={() => navigation.navigate('Search')}
-                android_ripple={{ color: 'rgba(244,238,227,0.2)', borderless: true }}
-                style={styles.headerIconBtn}
-                accessibilityRole="button"
-                accessibilityLabel="Search chats"
+              <Menu
+                visible={actionsMenu}
+                onDismiss={() => setActionsMenu(false)}
+                anchor={
+                  <Pressable
+                    onPress={() => setActionsMenu(true)}
+                    android_ripple={{ color: 'rgba(244,238,227,0.2)', borderless: true }}
+                    style={styles.headerIconBtn}
+                    accessibilityRole="button"
+                    accessibilityLabel="More actions"
+                  >
+                    <Icon source="dots-vertical" size={24} color={brand.cream} />
+                  </Pressable>
+                }
               >
-                <Icon source="magnify" size={22} color={brand.cream} />
-              </Pressable>
-              <Pressable
-                onPress={() => navigation.navigate('Bookmarks')}
-                android_ripple={{ color: 'rgba(244,238,227,0.2)', borderless: true }}
-                style={styles.headerIconBtn}
-                accessibilityRole="button"
-                accessibilityLabel="Saved answers"
-              >
-                <Icon source="bookmark-outline" size={22} color={brand.cream} />
-              </Pressable>
-              <Pressable
-                onPress={() => navigation.navigate('Schedule')}
-                android_ripple={{ color: 'rgba(244,238,227,0.2)', borderless: true }}
-                style={styles.headerIconBtn}
-                accessibilityRole="button"
-                accessibilityLabel="Vaccination schedule"
-              >
-                <Icon source="calendar-check" size={22} color={brand.cream} />
-              </Pressable>
-              <Pressable
-                onPress={() => navigation.navigate('Memory')}
-                android_ripple={{ color: 'rgba(244,238,227,0.2)', borderless: true }}
-                style={styles.headerIconBtn}
-                accessibilityRole="button"
-                accessibilityLabel="What the assistant remembers"
-              >
-                <Icon source="brain" size={22} color={brand.cream} />
-              </Pressable>
+                <Menu.Item leadingIcon="magnify" title={menuLabels.search} onPress={() => { setActionsMenu(false); navigation.navigate('Search'); }} />
+                <Menu.Item leadingIcon="bookmark-outline" title={menuLabels.saved} onPress={() => { setActionsMenu(false); navigation.navigate('Bookmarks'); }} />
+                <Menu.Item leadingIcon="calendar-check" title={menuLabels.schedule} onPress={() => { setActionsMenu(false); navigation.navigate('Schedule'); }} />
+                <Menu.Item leadingIcon="brain" title={menuLabels.memory} onPress={() => { setActionsMenu(false); navigation.navigate('Memory'); }} />
+              </Menu>
               <LanguageSwitcher />
             </View>
           </View>
