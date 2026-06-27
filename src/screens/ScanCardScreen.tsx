@@ -13,6 +13,7 @@ import * as ImagePicker from 'expo-image-picker';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { getCardSchedule, scanCard, storeCard, type CardData, type CardVaccine } from '../api';
+import { setCardNote } from '../cardNote';
 import { getDeviceId } from '../deviceId';
 import { useLanguage, type AppLanguage } from '../language';
 import { brand } from '../theme';
@@ -177,7 +178,8 @@ export default function ScanCardScreen({ navigation }: Props) {
         // schedule is best-effort; still show the saved confirmation
       }
 
-      navigation.navigate({ name: 'Chat', params: { cardNote: note }, merge: true });
+      setCardNote(note);
+      navigation.goBack();
     } catch {
       setError(s.saveFail);
       setSaving(false);
