@@ -72,8 +72,24 @@ type Msg = {
   role: 'user' | 'assistant';
   content: string;
   pending?: boolean;
+  status?: string; // Live status label shown while pending (e.g. "Finding sites…")
   feedback?: FeedbackRating; // User's feedback on this message
   bookmarked?: boolean;
+};
+
+// Backend streams status keys (locating/searching/reading_card) before the
+// answer; map them to a label in the user's language.
+const STATUS: Record<ReplyLanguage, Record<string, string>> = {
+  en: { locating: 'Finding your nearest vaccination sites…', searching: 'Searching…', reading_card: 'Reading the card…' },
+  ur: { locating: 'آپ کے قریب ترین مراکز تلاش کیے جا رہے ہیں…', searching: 'تلاش کیا جا رہا ہے…', reading_card: 'کارڈ پڑھا جا رہا ہے…' },
+  fa: { locating: 'در حال یافتن نزدیک‌ترین مراکز واکسیناسیون…', searching: 'در حال جستجو…', reading_card: 'در حال خواندن کارت…' },
+  ps: { locating: 'ستاسو نږدې واکسین مرکزونه لټول کیږي…', searching: 'لټون کیږي…', reading_card: 'کارت لوستل کیږي…' },
+  sd: { locating: 'توهان جي ويجهو ويڪسينيشن سينٽر ڳوليا پيا وڃن…', searching: 'ڳولا ٿي رهي آهي…', reading_card: 'ڪارڊ پڙهيو پيو وڃي…' },
+};
+
+const statusLabel = (key: string, language: ReplyLanguage): string => {
+  const m = STATUS[language] ?? STATUS.en;
+  return m[key] ?? m.searching ?? STATUS.en.searching;
 };
 
 type Strings = {
@@ -408,6 +424,11 @@ const MessageBubble = memo(function MessageBubble({
             {item.pending && item.content === '' ? (
               <View style={styles.pendingRow}>
                 <TypingDots size={6} color={brand.amber} />
+                {item.status ? (
+                  <Text style={[styles.statusText, isRtl ? styles.rtl : null]} numberOfLines={2}>
+                    {item.status}
+                  </Text>
+                ) : null}
               </View>
             ) : isUser ? (
               <Text
@@ -838,6 +859,12 @@ export default function ChatScreen({ route, navigation }: Props) {
           { deviceId, message: text, chatId, language, location: locationRef.current },
           {
             onMeta: (id) => setChatId(id),
+            onStatus: (key) =>
+              setMessages((m) =>
+                m.map((x) =>
+                  x.id === placeholderId ? { ...x, status: statusLabel(key, language) } : x,
+                ),
+              ),
             onDelta: () => {
               sawDelta = true;
             },
@@ -1453,7 +1480,8 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   bubbleText: { fontSize: 16, lineHeight: 24 },
-  pendingRow: { paddingVertical: 6 },
+  pendingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6 },
+  statusText: { color: '#5E6E84', fontSize: 13, flexShrink: 1, fontStyle: 'italic' },
   bubbleWrapper: { maxWidth: '82%' },
   bubbleWrapperUser: { alignItems: 'flex-end' },
   bubbleRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },

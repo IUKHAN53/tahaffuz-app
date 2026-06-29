@@ -104,6 +104,9 @@ export type StreamHandlers = {
   onMeta?: (chatId: number) => void;
   /** Fired for each text chunk as the answer is generated. */
   onDelta?: (text: string) => void;
+  /** Fired with a status key (e.g. 'locating', 'searching') for a live label
+   *  while the backend works, before any answer text streams. */
+  onStatus?: (key: string) => void;
 };
 
 /**
@@ -163,6 +166,8 @@ export async function sendTextStream(
     }
     if (event === 'meta' && typeof payload?.chat_id === 'number') {
       handlers.onMeta?.(payload.chat_id);
+    } else if (event === 'status' && typeof payload?.key === 'string') {
+      handlers.onStatus?.(payload.key);
     } else if (event === 'delta' && typeof payload?.text === 'string') {
       handlers.onDelta?.(payload.text);
     } else if (event === 'done' && payload?.reply) {
