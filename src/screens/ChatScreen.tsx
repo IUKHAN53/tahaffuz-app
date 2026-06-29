@@ -92,6 +92,16 @@ const statusLabel = (key: string, language: ReplyLanguage): string => {
   return m[key] ?? m.searching ?? STATUS.en.searching;
 };
 
+// The host buffers SSE (Apache mod_proxy_fcgi), so the backend's live status
+// events don't arrive until the answer is ready. We therefore show an immediate
+// best-guess status label client-side while waiting; onStatus refines it if an
+// event does come through. A location-flavoured message → "Finding sites…".
+const LOCATION_HINT =
+  /\b(near|nearest|location|site|cent(er|re)|clinic|where\b.*\b(get|vaccinat|jab))\b|کہاں|جگہ|لوکیشن|مرکز|قریب|نزدیک|سینٹر|کلینک|جاؤں|لگوا|ٿاڻي|ويجهو|نږدې/iu;
+
+const guessStatusKey = (text: string): 'locating' | 'searching' =>
+  LOCATION_HINT.test(text) ? 'locating' : 'searching';
+
 type Strings = {
   newChat: string;
   eyebrow: string;
@@ -842,7 +852,13 @@ export default function ChatScreen({ route, navigation }: Props) {
 
       const placeholderId = `p${Date.now()}`;
       const userMsg: Msg = { id: `u${Date.now()}`, role: 'user', content: text };
-      const placeholder: Msg = { id: placeholderId, role: 'assistant', content: '', pending: true };
+      const placeholder: Msg = {
+        id: placeholderId,
+        role: 'assistant',
+        content: '',
+        pending: true,
+        status: statusLabel(guessStatusKey(text), language),
+      };
       setMessages((m) => [...m, userMsg, placeholder]);
       setBusy(true);
 
@@ -937,7 +953,7 @@ export default function ChatScreen({ route, navigation }: Props) {
       setMessages((m) => [
         ...m,
         { id: userId, role: 'user', content: strings.voicePlaceholder, pending: true },
-        { id: placeholderId, role: 'assistant', content: '', pending: true },
+        { id: placeholderId, role: 'assistant', content: '', pending: true, status: statusLabel('searching', language) },
       ]);
       scroll();
 
