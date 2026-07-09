@@ -1,9 +1,10 @@
 import { memo, useState } from 'react';
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import { Text } from 'react-native-paper';
+import { Feather } from '@expo/vector-icons';
 
 import { useLanguage, type AppLanguage } from '../language';
-import { brand } from '../theme';
+import { tika } from '../theme';
 
 const LANGUAGES: { value: AppLanguage; label: string; native: string }[] = [
   { value: 'en', label: 'English', native: 'English' },
@@ -14,14 +15,17 @@ const LANGUAGES: { value: AppLanguage; label: string; native: string }[] = [
 ];
 
 const SHORT_LABELS: Record<AppLanguage, string> = {
-  en: 'EN',
+  en: 'English',
   ur: 'اردو',
   fa: 'فارسی',
-  ps: 'پښ',
-  sd: 'سن',
+  ps: 'پښتو',
+  sd: 'سنڌي',
 };
 
-/** Language switcher with full-screen modal for easy selection. */
+/**
+ * Language pill (mint chip with teal label + chevron, per the mockup header)
+ * that opens a full-screen language picker.
+ */
 function LanguageSwitcherComponent() {
   const { language, setLanguage } = useLanguage();
   const [modalVisible, setModalVisible] = useState(false);
@@ -35,14 +39,14 @@ function LanguageSwitcherComponent() {
     <>
       <Pressable
         onPress={() => setModalVisible(true)}
-        android_ripple={{ color: 'rgba(244,238,227,0.25)', borderless: false }}
+        android_ripple={{ color: 'rgba(14,124,102,0.15)', borderless: false }}
         style={styles.trigger}
         accessibilityRole="button"
         accessibilityLabel="Change language"
         accessibilityHint="Opens language selection"
       >
-        <Text style={styles.globeIcon}>🌐</Text>
         <Text style={styles.triggerText}>{SHORT_LABELS[language]}</Text>
+        <Feather name="chevron-down" size={14} color={tika.teal} />
       </Pressable>
 
       <Modal
@@ -63,7 +67,7 @@ function LanguageSwitcherComponent() {
                   <Pressable
                     key={lang.value}
                     onPress={() => selectLanguage(lang.value)}
-                    android_ripple={{ color: 'rgba(7,32,63,0.08)' }}
+                    android_ripple={{ color: 'rgba(14,124,102,0.08)' }}
                     style={[styles.languageOption, isActive && styles.languageOptionActive]}
                     accessibilityRole="radio"
                     accessibilityState={{ checked: isActive }}
@@ -79,7 +83,7 @@ function LanguageSwitcherComponent() {
                     </View>
                     {isActive && (
                       <View style={styles.checkmark}>
-                        <Text style={styles.checkmarkText}>✓</Text>
+                        <Feather name="check" size={16} color="#FFFFFF" />
                       </View>
                     )}
                   </Pressable>
@@ -100,23 +104,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: 'rgba(244,238,227,0.15)',
+    backgroundColor: tika.mint,
     paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 24,
-  },
-  globeIcon: {
-    fontSize: 16,
+    paddingVertical: 9,
+    borderRadius: 999,
   },
   triggerText: {
-    color: brand.cream,
+    color: tika.teal,
     fontSize: 14,
     fontWeight: '700',
   },
 
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(7,32,63,0.6)',
+    backgroundColor: 'rgba(11,36,64,0.55)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
@@ -127,7 +128,7 @@ const styles = StyleSheet.create({
     padding: 24,
     width: '100%',
     maxWidth: 340,
-    shadowColor: brand.ink,
+    shadowColor: tika.shadow,
     shadowOpacity: 0.25,
     shadowRadius: 30,
     shadowOffset: { width: 0, height: 10 },
@@ -135,13 +136,13 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: 22,
-    fontWeight: '700',
-    color: brand.ink,
+    fontWeight: '800',
+    color: tika.ink,
     textAlign: 'center',
   },
   modalSubtitle: {
     fontSize: 16,
-    color: brand.indigoSoft,
+    color: tika.inkSoft,
     textAlign: 'center',
     marginTop: 4,
     marginBottom: 20,
@@ -157,42 +158,37 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 18,
     borderRadius: 16,
-    backgroundColor: 'rgba(7,32,63,0.03)',
+    backgroundColor: tika.bg,
   },
   languageOptionActive: {
-    backgroundColor: 'rgba(20,60,108,0.1)',
+    backgroundColor: tika.mint,
     borderWidth: 2,
-    borderColor: brand.indigo,
+    borderColor: tika.teal,
   },
   languageInfo: {
     gap: 2,
   },
   languageNative: {
     fontSize: 18,
-    fontWeight: '600',
-    color: brand.ink,
+    fontWeight: '700',
+    color: tika.ink,
   },
   languageLabel: {
     fontSize: 13,
-    color: brand.indigoSoft,
+    color: tika.inkSoft,
   },
   languageTextActive: {
-    color: brand.indigo,
+    color: tika.teal,
   },
   languageLabelActive: {
-    color: brand.indigo,
+    color: tika.teal,
   },
   checkmark: {
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: brand.indigo,
+    backgroundColor: tika.teal,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  checkmarkText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
   },
 });

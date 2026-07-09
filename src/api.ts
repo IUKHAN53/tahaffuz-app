@@ -14,6 +14,27 @@ export type Citation = {
   snippet: string;
 };
 
+export type VoiceGender = 'male' | 'female' | 'unknown';
+
+/**
+ * A vaccination site attached to a location answer, rendered by the app as a
+ * tappable site card. `timing` is the display label ("Mon-Sat 9AM-2PM") built
+ * by the backend from the structured fields below; the structured days and
+ * open/close times ride along for future schedule UI.
+ */
+export type SiteInfo = {
+  name: string;
+  area?: string | null;
+  distance_km?: number | null;
+  maps_url?: string | null;
+  timing?: string | null;
+  timing_days?: string[];
+  open_time?: string | null;
+  close_time?: string | null;
+  break_start?: string | null;
+  break_end?: string | null;
+};
+
 export type ChatReply = {
   chat_id: number;
   reply: {
@@ -21,8 +42,12 @@ export type ChatReply = {
     content: string;
     citations: Citation[];
     latency_ms: number;
+    // Structured sites for location answers (site cards). Absent otherwise.
+    sites?: SiteInfo[];
   };
   transcript?: string;
+  // Best-effort gender of the voice-message speaker; drives the reply voice.
+  voice_gender?: VoiceGender;
 };
 
 export type ChatSummary = {
@@ -247,8 +272,14 @@ export async function sendAudio(params: {
  * is English or Roman Urdu (Roman Urdu is transliterated to Urdu script before
  * synthesis); Urdu-script text is always voiced as Urdu regardless.
  */
-export function ttsUrl(text: string, lang: ReplyLanguage): string {
+export function ttsUrl(
+  text: string,
+  lang: ReplyLanguage,
+  gender?: VoiceGender | null,
+): string {
   const q = new URLSearchParams({ text, lang });
+  // Only 'male' changes the voice; 'female'/'unknown'/absent use the default.
+  if (gender === 'male') q.set('gender', 'male');
   return `${apiBase}/api/tts?${q.toString()}`;
 }
 

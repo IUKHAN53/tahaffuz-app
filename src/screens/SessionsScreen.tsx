@@ -20,13 +20,14 @@ import {
 } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
 import Constants from 'expo-constants';
+import { Feather } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { deleteChat } from '../api';
 import { getDeviceId } from '../deviceId';
 import { loadSessions, removeSession, type LocalSession } from '../sessions';
 import { useLanguage, type AppLanguage } from '../language';
-import { brand } from '../theme';
+import { brand, tika } from '../theme';
 import { BrandMark } from '../components/BrandMark';
 import { TypingDots } from '../components/TypingDots';
 import { LanguageSwitcher } from '../components/LanguageSwitcher';
@@ -205,7 +206,7 @@ const SessionCard = memo(function SessionCard({
         android_ripple={{ color: 'rgba(7,32,63,0.08)', borderless: true, radius: 18 }}
         style={styles.cardDelete}
       >
-        <Text style={styles.cardDeleteIcon}>✕</Text>
+        <Feather name="x" size={16} color={brand.indigoSoft} style={{ opacity: 0.6 }} />
       </Pressable>
     </Pressable>
   );
@@ -308,10 +309,10 @@ export default function SessionsScreen({ navigation }: Props) {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      <StatusBar barStyle="light-content" backgroundColor={brand.ink} />
+      <StatusBar barStyle="light-content" backgroundColor={tika.tealDeep} />
 
       <LinearGradient
-        colors={[brand.ink, brand.indigo]}
+        colors={[tika.tealDeep, tika.teal]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.header}
@@ -388,7 +389,7 @@ export default function SessionsScreen({ navigation }: Props) {
             style={({ pressed }) => [styles.emptyCta, pressed && { opacity: 0.92 }]}
           >
             <Text style={styles.emptyCtaText}>{s.startChat}</Text>
-            <Text style={styles.emptyCtaArrow}>→</Text>
+            <Feather name={rtl ? 'arrow-left' : 'arrow-right'} size={18} color="#fff" />
           </Pressable>
         </View>
       ) : (
@@ -419,7 +420,7 @@ export default function SessionsScreen({ navigation }: Props) {
           android_ripple={{ color: 'rgba(244,238,227,0.25)', borderless: true, radius: 30 }}
           style={({ pressed }) => [styles.fab, pressed && { opacity: 0.94 }]}
         >
-          <Text style={styles.fabIcon}>+</Text>
+          <Feather name="plus" size={28} color="#fff" />
         </Pressable>
       )}
 
@@ -573,7 +574,6 @@ const styles = StyleSheet.create({
   cardMetaText: { color: brand.indigoSoft, fontSize: 12, opacity: 0.8 },
 
   cardDelete: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
-  cardDeleteIcon: { color: brand.indigoSoft, fontSize: 16, opacity: 0.5 },
 
   // Empty state - cleaner visual hierarchy
   empty: {
@@ -625,25 +625,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: brand.ink,
+    backgroundColor: tika.teal,
     paddingVertical: 16,
     paddingHorizontal: 26,
     borderRadius: 999,
-    shadowColor: brand.ink,
-    shadowOpacity: 0.25,
+    shadowColor: tika.teal,
+    shadowOpacity: 0.3,
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 8 },
     elevation: 5,
   },
   emptyCtaText: {
-    color: brand.cream,
+    color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
     letterSpacing: 0.3,
   },
-  emptyCtaArrow: { color: brand.amber, fontSize: 20, fontWeight: '600' },
 
-  // FAB - more prominent
+  // FAB — amber, the design's primary-action color
   fab: {
     position: 'absolute',
     right: 20,
@@ -651,16 +650,15 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: brand.ink,
+    backgroundColor: tika.amber,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: brand.ink,
-    shadowOpacity: 0.35,
+    shadowColor: tika.amber,
+    shadowOpacity: 0.4,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 8 },
     elevation: 8,
   },
-  fabIcon: { color: brand.cream, fontSize: 32, fontWeight: '300', lineHeight: 32 },
 
   // Dialog
   dialog: { borderRadius: 20, backgroundColor: '#FFFFFF' },

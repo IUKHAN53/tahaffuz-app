@@ -234,11 +234,11 @@ export default function RegisterScreen({ navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={brand.ink} />
-      <LinearGradient colors={[brand.ink, brand.indigo]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.header}>
+      <StatusBar barStyle="light-content" backgroundColor={brand.inkMid} />
+      <LinearGradient colors={[brand.inkMid, brand.indigo]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.header}>
         <View style={styles.headerTop}>
           <View style={styles.brandRow}>
-            <BrandMark size={30} />
+            <BrandMark size={30} shield="#FFFFFF" />
             <Text style={styles.brandName}>Tika Dost</Text>
           </View>
           <LanguageSwitcher />

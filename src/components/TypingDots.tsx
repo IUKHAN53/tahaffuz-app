@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { brand } from '../theme';
+import { tika } from '../theme';
 
 type Props = {
   size?: number;
@@ -10,10 +10,10 @@ type Props = {
 };
 
 /**
- * Three amber dots that pulse with a stagger — visual echo of the brand mark.
- * Used as the assistant "thinking…" indicator inside a chat bubble.
+ * Three green dots that pulse with a stagger (mockup tdDot) — the assistant
+ * "thinking…" indicator shown in the status pill while an answer is prepared.
  */
-export function TypingDots({ size = 6, color = brand.amber, style }: Props) {
+export function TypingDots({ size = 6, color = tika.tealBright, style }: Props) {
   const a = useRef(new Animated.Value(0.3)).current;
   const b = useRef(new Animated.Value(0.3)).current;
   const c = useRef(new Animated.Value(0.3)).current;

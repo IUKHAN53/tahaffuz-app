@@ -16,14 +16,12 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 import {
-  Icon,
   Snackbar,
   Text,
   TextInput,
-  useTheme,
 } from 'react-native-paper';
+import { Feather } from '@expo/vector-icons';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as Speech from 'expo-speech';
 import * as Clipboard from 'expo-clipboard';
 import Markdown from 'react-native-markdown-display';
@@ -47,6 +45,7 @@ import {
   ttsUrl,
   type ReplyLanguage,
   type FeedbackRating,
+  type SiteInfo,
 } from '../api';
 import { getDeviceId } from '../deviceId';
 import { getSessionLocation } from '../location';
@@ -58,8 +57,8 @@ import {
 } from '../offlineCache';
 import { upsertSession } from '../sessions';
 import { useLanguage } from '../language';
-import { brand, palette } from '../theme';
-import { BrandMark } from '../components/BrandMark';
+import { tika, palette } from '../theme';
+import { TikaMascot } from '../components/TikaMascot';
 import { TypingDots } from '../components/TypingDots';
 import { LanguageSwitcher } from '../components/LanguageSwitcher';
 import type { RootStackParamList } from '../navigation';
@@ -75,6 +74,8 @@ type Msg = {
   status?: string; // Live status label shown while pending (e.g. "Finding sites…")
   feedback?: FeedbackRating; // User's feedback on this message
   bookmarked?: boolean;
+  voice?: boolean; // User message that came in as a voice recording
+  sites?: SiteInfo[]; // Structured vaccination sites (location answers)
 };
 
 // Backend streams status keys (locating/searching/reading_card) before the
@@ -104,12 +105,17 @@ const guessStatusKey = (text: string): 'locating' | 'searching' =>
 
 type Strings = {
   newChat: string;
-  eyebrow: string;
+  brandTitle: string;
+  helperTag: string;
+  todayChip: string;
   greeting: string;
   greetingHint: string;
-  voicePrompt: string;
   suggestions: string[];
   quickReplies: string[];
+  scanCard: string;
+  tapToSpeak: string;
+  readAloud: string;
+  directions: string;
   placeholder: string;
   errorLoad: string;
   errorNet: string;
@@ -119,185 +125,180 @@ type Strings = {
   voicePlaceholder: string;
   voiceTranscriptFallback: string;
   snackbarClose: string;
-  micHint: string;
-  micHintStop: string;
   copied: string;
   retry: string;
-  helpfulHint: string;
-  notHelpfulHint: string;
-  saveHint: string;
   offlineNote: string;
 };
 
 const COPY: Record<ReplyLanguage, Strings> = {
   en: {
     newChat: 'New chat',
-    eyebrow: 'YOUR VACCINE HELPER',
-    greeting: 'Hello! How can I help you today?',
-    greetingHint: 'I can answer questions about vaccines, cold chain, and immunization.',
-    voicePrompt: 'You can also tap the microphone to speak your question!',
+    brandTitle: 'Tika Dost',
+    helperTag: 'Vaccine helper',
+    todayChip: 'Today',
+    greeting: 'How can I help you today?',
+    greetingHint: "Ask me anything about your child's vaccines.",
     suggestions: [
-      'What temperature should vaccines be stored at?',
-      'When is the polio vaccine given?',
-      'What does the BCG vaccine prevent?',
+      'Which vaccine is next?',
+      'Is fever after a vaccine normal?',
+      'Where is the nearest vaccination centre?',
     ],
     quickReplies: [
       'Tell me more',
       'What are the side effects?',
       'When should this be given?',
     ],
-    placeholder: 'Type your question here...',
+    scanCard: 'Scan vaccination card',
+    tapToSpeak: 'Tap to speak',
+    readAloud: 'Read aloud',
+    directions: 'Directions',
+    placeholder: 'Type your question…',
     errorLoad: 'Could not load chat. Please try again.',
     errorNet: 'No internet connection. Please check and try again.',
     errorMic: 'Could not access microphone. Please allow microphone access.',
     errorNoAudio: 'No audio was recorded. Please try again.',
     errorVoice: 'Could not process voice. Please try typing instead.',
-    voicePlaceholder: 'Listening...',
+    voicePlaceholder: 'Listening…',
     voiceTranscriptFallback: 'Voice message',
     snackbarClose: 'OK',
-    micHint: 'Tap microphone to speak',
-    micHintStop: 'Tap to send your voice message',
     copied: 'Answer copied!',
     retry: 'Try Again',
-    helpfulHint: 'This helps us improve',
-    notHelpfulHint: 'We will do better',
-    saveHint: 'Saved for later',
     offlineNote: 'You are offline — showing a saved answer.',
   },
   ur: {
     newChat: 'نیا چیٹ',
-    eyebrow: 'آپ کا ویکسین ہیلپر',
-    greeting: 'السلام علیکم! میں آج آپ کی کیسے مدد کر سکتا ہوں؟',
-    greetingHint: 'میں ویکسین، کولڈ چین، اور حفاظتی ٹیکوں کے بارے میں سوالات کا جواب دے سکتا ہوں۔',
-    voicePrompt: 'آپ اپنا سوال بولنے کے لیے مائیکروفون بھی دبا سکتے ہیں!',
+    brandTitle: 'ٹیکہ دوست',
+    helperTag: 'ٹیکہ مددگار',
+    todayChip: 'آج',
+    greeting: 'میں آپ کی کیا مدد کر سکتی ہوں؟',
+    greetingHint: 'اپنے بچے کے ٹیکوں کے بارے میں کچھ بھی پوچھیں',
     suggestions: [
-      'ویکسین کس درجہ حرارت پر رکھنی چاہیے؟',
-      'پولیو ویکسین کب لگائی جاتی ہے؟',
-      'BCG ویکسین کیا روکتی ہے؟',
+      'اگلا ٹیکہ کون سا ہے؟',
+      'ٹیکے کے بعد بخار — کیا یہ معمول ہے؟',
+      'قریبی ٹیکہ مرکز کہاں ہے؟',
     ],
     quickReplies: [
       'مزید بتائیں',
       'اس کے ضمنی اثرات کیا ہیں؟',
       'یہ کب دینی چاہیے؟',
     ],
-    placeholder: 'اپنا سوال یہاں لکھیں...',
+    scanCard: 'ٹیکہ کارڈ اسکین کریں',
+    tapToSpeak: 'بولنے کے لیے دبائیں',
+    readAloud: 'سنیں',
+    directions: 'راستہ دیکھیں',
+    placeholder: 'اپنا سوال لکھیں…',
     errorLoad: 'چیٹ لوڈ نہیں ہو سکی۔ براہ کرم دوبارہ کوشش کریں۔',
     errorNet: 'انٹرنیٹ کنکشن نہیں۔ براہ کرم چیک کریں اور دوبارہ کوشش کریں۔',
     errorMic: 'مائیکروفون استعمال نہیں ہو سکا۔ براہ کرم اجازت دیں۔',
     errorNoAudio: 'کوئی آڈیو ریکارڈ نہیں ہوئی۔ براہ کرم دوبارہ کوشش کریں۔',
     errorVoice: 'آواز پروسیس نہیں ہو سکی۔ براہ کرم لکھ کر بھیجیں۔',
-    voicePlaceholder: 'سن رہا ہوں...',
+    voicePlaceholder: 'سن رہی ہوں…',
     voiceTranscriptFallback: 'آواز کا پیغام',
     snackbarClose: 'ٹھیک ہے',
-    micHint: 'بولنے کے لیے مائیکروفون دبائیں',
-    micHintStop: 'آواز بھیجنے کے لیے دبائیں',
     copied: 'جواب کاپی ہو گیا!',
     retry: 'دوبارہ کوشش',
-    helpfulHint: 'اس سے ہمیں بہتر ہونے میں مدد ملتی ہے',
-    notHelpfulHint: 'ہم بہتر کریں گے',
-    saveHint: 'بعد میں کے لیے محفوظ',
     offlineNote: 'آپ آف لائن ہیں — محفوظ شدہ جواب دکھایا جا رہا ہے۔',
   },
   fa: {
     newChat: 'گفتگوی جدید',
-    eyebrow: 'دستیار واکسن شما',
-    greeting: 'سلام! امروز چطور می‌توانم کمکتان کنم؟',
-    greetingHint: 'می‌توانم به پرسش‌های شما درباره واکسن، زنجیره سرد و واکسیناسیون پاسخ دهم.',
-    voicePrompt: 'برای گفتن پرسش‌تان می‌توانید میکروفون را هم لمس کنید!',
+    brandTitle: 'ٹیکہ دوست',
+    helperTag: 'دستیار واکسن',
+    todayChip: 'امروز',
+    greeting: 'امروز چطور می‌توانم کمکتان کنم؟',
+    greetingHint: 'هر سوالی درباره واکسن‌های کودکتان بپرسید.',
     suggestions: [
-      'واکسن در چه دمایی باید نگهداری شود؟',
-      'واکسن فلج اطفال چه زمانی داده می‌شود؟',
-      'واکسن ب‌ث‌ژ از چه بیماری جلوگیری می‌کند؟',
+      'واکسن بعدی کدام است؟',
+      'تب بعد از واکسن طبیعی است؟',
+      'نزدیک‌ترین مرکز واکسیناسیون کجاست؟',
     ],
     quickReplies: [
       'بیشتر توضیح دهید',
       'عوارض آن چیست؟',
       'چه زمانی باید داده شود؟',
     ],
-    placeholder: 'پرسش خود را اینجا بنویسید...',
+    scanCard: 'کارت واکسیناسیون را اسکن کنید',
+    tapToSpeak: 'برای صحبت لمس کنید',
+    readAloud: 'بشنوید',
+    directions: 'مسیر',
+    placeholder: 'سوال خود را بنویسید…',
     errorLoad: 'گفتگو بارگذاری نشد. لطفاً دوباره تلاش کنید.',
     errorNet: 'اتصال اینترنت نیست. لطفاً بررسی کنید و دوباره تلاش کنید.',
     errorMic: 'دسترسی به میکروفون ممکن نشد. لطفاً اجازه دهید.',
     errorNoAudio: 'هیچ صدایی ضبط نشد. لطفاً دوباره تلاش کنید.',
     errorVoice: 'پردازش صدا ممکن نشد. لطفاً تایپ کنید.',
-    voicePlaceholder: 'در حال شنیدن...',
+    voicePlaceholder: 'در حال شنیدن…',
     voiceTranscriptFallback: 'پیام صوتی',
     snackbarClose: 'باشه',
-    micHint: 'برای صحبت میکروفون را لمس کنید',
-    micHintStop: 'برای ارسال صدا لمس کنید',
     copied: 'پاسخ کپی شد!',
     retry: 'تلاش دوباره',
-    helpfulHint: 'این به بهتر شدن ما کمک می‌کند',
-    notHelpfulHint: 'بهتر خواهیم کرد',
-    saveHint: 'برای بعد ذخیره شد',
     offlineNote: 'شما آفلاین هستید — پاسخ ذخیره‌شده نمایش داده می‌شود.',
   },
   ps: {
     newChat: 'نوې خبرې',
-    eyebrow: 'ستاسو واکسین مرستندویه',
-    greeting: 'سلام! نن ورځ زه څنګه مرسته کولی شم؟',
-    greetingHint: 'زه د واکسینونو، کولډ چین، او واکسینیشن په اړه پوښتنو ته ځواب ورکولی شم.',
-    voicePrompt: 'تاسو کولی شئ خپله پوښتنه ووایاست - مایکروفون ټچ کړئ!',
+    brandTitle: 'ٹیکہ دوست',
+    helperTag: 'د واکسین مرستندوی',
+    todayChip: 'نن',
+    greeting: 'نن څنګه مرسته وکړم؟',
+    greetingHint: 'د خپل ماشوم د واکسینونو په اړه هر څه وپوښتئ.',
     suggestions: [
-      'واکسین په کومه تودوخه کې ساتل شي؟',
-      'د پولیو واکسین کله ورکول کیږي؟',
-      'BCG واکسین څه مخنیوی کوي؟',
+      'راتلونکی واکسین کوم دی؟',
+      'د واکسین وروسته تبه — عادي ده؟',
+      'نږدې د واکسین مرکز چیرته دی؟',
     ],
     quickReplies: [
       'نور راته ووایاست',
       'د دې اغیزې څه دي؟',
       'دا کله باید ورکړل شي؟',
     ],
-    placeholder: 'خپله پوښتنه دلته ولیکئ...',
+    scanCard: 'د واکسین کارت سکین کړئ',
+    tapToSpeak: 'د خبرو لپاره کېکاږئ',
+    readAloud: 'واورئ',
+    directions: 'لار وګورئ',
+    placeholder: 'خپله پوښتنه ولیکئ…',
     errorLoad: 'خبرې نه لوډ شوې۔ بیا هڅه وکړئ.',
     errorNet: 'انټرنیټ نشته۔ وګورئ او بیا هڅه وکړئ.',
     errorMic: 'مایکروفون نه کار کوي۔ اجازه ورکړئ.',
     errorNoAudio: 'آډیو ریکارډ نه شو۔ بیا هڅه وکړئ.',
     errorVoice: 'غږ پروسس نه شو۔ لیکلی پوښتنه وکړئ.',
-    voicePlaceholder: 'اورم...',
+    voicePlaceholder: 'اورم…',
     voiceTranscriptFallback: 'غږیز پیغام',
     snackbarClose: 'سمه ده',
-    micHint: 'د ویلو لپاره مایکروفون ټچ کړئ',
-    micHintStop: 'غږ لیږلو لپاره ټچ کړئ',
     copied: 'ځواب کاپي شو!',
     retry: 'بیا هڅه وکړئ',
-    helpfulHint: 'دا موږ سره مرسته کوي',
-    notHelpfulHint: 'موږ به ښه کړو',
-    saveHint: 'د وروسته لپاره خوندي شو',
     offlineNote: 'تاسو آفلاین یاست — خوندي شوی ځواب ښودل کیږي.',
   },
   sd: {
     newChat: 'نئين چيٽ',
-    eyebrow: 'توهان جو ويڪسين هيلپر',
-    greeting: 'السلام عليڪم! اڄ مان توهان جي ڪيئن مدد ڪري سگهان ٿو؟',
-    greetingHint: 'مان ويڪسين، ڪولڊ چين، ۽ واڪسينيشن بابت سوالن جا جواب ڏئي سگهان ٿو.',
-    voicePrompt: 'توهان پنهنجو سوال ٻولڻ لاءِ مائڪ به دٻائي سگهو ٿا!',
+    brandTitle: 'ٹیکہ دوست',
+    helperTag: 'ويڪسين مددگار',
+    todayChip: 'اڄ',
+    greeting: 'مان ڪيئن مدد ڪري سگهان؟',
+    greetingHint: 'پنهنجي ٻار جي ويڪسين بابت ڪجهه به پڇو.',
     suggestions: [
-      'ويڪسين ڪهڙي درجي حرارت تي رکڻ گهرجي؟',
-      'پوليو ويڪسين ڪڏهن ڏني ويندي آهي؟',
-      'BCG ويڪسين ڇا روڪيندي آهي؟',
+      'اڳيون ويڪسين ڪهڙي آهي؟',
+      'ويڪسين کانپوءِ بخار — ڇا معمول آهي؟',
+      'ويجهو ويڪسينيشن سينٽر ڪٿي آهي؟',
     ],
     quickReplies: [
       'وڌيڪ ٻڌايو',
       'هن جا ضمني اثر ڇا آهن؟',
       'هي ڪڏهن ڏني وڃي؟',
     ],
-    placeholder: 'پنهنجو سوال هتي لکو...',
+    scanCard: 'ويڪسين ڪارڊ اسڪين ڪريو',
+    tapToSpeak: 'ڳالهائڻ لاءِ دٻايو',
+    readAloud: 'ٻڌو',
+    directions: 'رستو ڏسو',
+    placeholder: 'پنهنجو سوال لکو…',
     errorLoad: 'چيٽ لوڊ نه ٿي سگهي۔ ٻيهر ڪوشش ڪريو.',
     errorNet: 'انٽرنيٽ ڪنيڪشن نه آهي۔ چيڪ ڪريو ۽ ٻيهر ڪوشش ڪريو.',
     errorMic: 'مائڪ استعمال نه ٿي سگهيو۔ اجازت ڏيو.',
     errorNoAudio: 'ڪا آڊيو رڪارڊ نه ٿي۔ ٻيهر ڪوشش ڪريو.',
     errorVoice: 'آواز پروسيس نه ٿي سگهي۔ لکي موڪليو.',
-    voicePlaceholder: 'ٻڌي رهيو آهيان...',
+    voicePlaceholder: 'ٻڌي رهي آهيان…',
     voiceTranscriptFallback: 'آواز جو پيغام',
     snackbarClose: 'ٺيڪ آهي',
-    micHint: 'ٻولڻ لاءِ مائڪ دٻايو',
-    micHintStop: 'آواز موڪلڻ لاءِ دٻايو',
     copied: 'جواب ڪاپي ٿي ويو!',
     retry: 'ٻيهر ڪوشش',
-    helpfulHint: 'اهو اسان کي بهتر ٿيڻ ۾ مدد ڪري ٿو',
-    notHelpfulHint: 'اسان بهتر ڪنداسين',
-    saveHint: 'پوءِ لاءِ محفوظ',
     offlineNote: 'توهان آف لائين آهيو — محفوظ جواب ڏيکاريو پيو وڃي.',
   },
 };
@@ -338,6 +339,20 @@ function stripMarkdownForSpeech(text: string): string {
 }
 
 /**
+ * Drop the trailing "📍 [site](maps url)" pin lines from a site answer. Used
+ * for speech always (reading map links aloud is noise) and for display when
+ * structured site cards are shown instead (the cards carry the Directions
+ * buttons, so the raw link list would be a duplicate).
+ */
+function stripMapsLines(text: string): string {
+  return text
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('📍'))
+    .join('\n')
+    .trim();
+}
+
+/**
  * Choose the voice language from the answer's OWN script, not the app's UI
  * language. A Pashto/Urdu answer must be read with that language's voice — using
  * the English voice (the app setting) makes it skip the Arabic script and read
@@ -346,10 +361,17 @@ function stripMarkdownForSpeech(text: string): string {
  */
 function ttsLangForText(text: string, appLang: ReplyLanguage): ReplyLanguage {
   if (/[ټډړږښځڅېګڼ]/.test(text)) return 'ps';
-  if (/[ڳڻڪھڀٺٽ۾]/.test(text)) return 'sd';
-  // Farsi and Urdu share the Arabic script and can't be told apart by letters,
-  // so for Arabic-script text trust the selected language (fa vs ur).
-  if (/[؀-ۿ]/.test(text)) return appLang === 'fa' ? 'fa' : 'ur';
+  // Sindhi-unique letters ONLY. ھ (U+06BE) is deliberately excluded — it is a
+  // very common Urdu letter (تھا، بھی، مجھے، پھر…), and including it made Urdu
+  // answers get tagged Sindhi and read by the wrong (Sindhi) voice.
+  if (/[ڳڻڪڀٺٽ۾]/.test(text)) return 'sd';
+  // Farsi/Urdu/Pashto/Sindhi share the Arabic script and can't always be told
+  // apart by letters, so for Arabic-script text trust the selected language
+  // (mirrors the backend's resolveLang); default to Urdu when it isn't one of
+  // the other Arabic-script tongues.
+  if (/[؀-ۿ]/.test(text)) {
+    return appLang === 'fa' || appLang === 'ps' || appLang === 'sd' ? appLang : 'ur';
+  }
   return 'en';
 }
 
@@ -359,35 +381,186 @@ const isPlaceholderTitleText = (t: string) =>
 
 // Markdown styles for bot messages (LTR)
 const mdStylesBot = {
-  body: { color: palette.botBubbleText, fontSize: 16, lineHeight: 25 },
+  body: { color: palette.botBubbleText, fontSize: 15.5, lineHeight: 24 },
   paragraph: { marginTop: 0, marginBottom: 10 },
-  heading1: { fontSize: 19, fontWeight: '700' as const, marginBottom: 10, marginTop: 4, color: brand.ink },
-  heading2: { fontSize: 17, fontWeight: '700' as const, marginBottom: 8, marginTop: 2, color: brand.ink },
-  heading3: { fontSize: 16, fontWeight: '600' as const, marginBottom: 6, color: brand.ink },
+  heading1: { fontSize: 19, fontWeight: '800' as const, marginBottom: 10, marginTop: 4, color: tika.ink },
+  heading2: { fontSize: 17, fontWeight: '800' as const, marginBottom: 8, marginTop: 2, color: tika.ink },
+  heading3: { fontSize: 16, fontWeight: '700' as const, marginBottom: 6, color: tika.ink },
   bullet_list: { marginBottom: 10, marginTop: 4 },
   ordered_list: { marginBottom: 10, marginTop: 4 },
   list_item: { marginBottom: 6 },
-  strong: { fontWeight: '700' as const, color: brand.ink },
+  strong: { fontWeight: '800' as const, color: tika.ink },
   em: { fontStyle: 'italic' as const },
-  code_inline: { backgroundColor: 'rgba(7,32,63,0.07)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 14 },
-  fence: { backgroundColor: 'rgba(7,32,63,0.05)', padding: 12, borderRadius: 10, marginVertical: 10 },
+  link: { color: tika.teal, textDecorationLine: 'underline' as const },
+  code_inline: { backgroundColor: tika.mint, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 14 },
+  fence: { backgroundColor: tika.mint, padding: 12, borderRadius: 10, marginVertical: 10 },
   code_block: { fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 14 },
-  blockquote: { borderLeftWidth: 3, borderLeftColor: brand.amber, paddingLeft: 12, marginVertical: 10, opacity: 0.95 },
+  blockquote: { borderLeftWidth: 3, borderLeftColor: tika.amber, paddingLeft: 12, marginVertical: 10, opacity: 0.95 },
 };
 
-// Markdown styles for bot messages (RTL - Urdu, Pashto, Sindhi)
+// Markdown styles for bot messages (RTL - Urdu, Farsi, Pashto, Sindhi)
 const mdStylesBotRtl = {
   ...mdStylesBot,
-  body: { ...mdStylesBot.body, writingDirection: 'rtl' as const, textAlign: 'right' as const },
+  body: { ...mdStylesBot.body, writingDirection: 'rtl' as const, textAlign: 'right' as const, lineHeight: 27 },
   paragraph: { ...mdStylesBot.paragraph, writingDirection: 'rtl' as const, textAlign: 'right' as const },
   list_item: { ...mdStylesBot.list_item, writingDirection: 'rtl' as const },
-  blockquote: { ...mdStylesBot.blockquote, borderLeftWidth: 0, borderRightWidth: 3, borderRightColor: brand.amber, paddingLeft: 0, paddingRight: 12 },
+  blockquote: { ...mdStylesBot.blockquote, borderLeftWidth: 0, borderRightWidth: 3, borderRightColor: tika.amber, paddingLeft: 0, paddingRight: 12 },
 };
+
+/** Feather icon per quick-question card, matching the mockup (calendar / thermometer / map-pin). */
+const SUGGESTION_ICONS: (keyof typeof Feather.glyphMap)[] = ['calendar', 'thermometer', 'map-pin'];
+
+/**
+ * WhatsApp-style live waveform for the recording bar. Bars rise with the mic's
+ * metering level when available; a gentle animated ripple keeps it alive when
+ * metering isn't reported.
+ */
+const RecordingWave = memo(function RecordingWave({ level }: { level: number }) {
+  const BAR_COUNT = 22;
+  const [bars, setBars] = useState<number[]>(() => Array(BAR_COUNT).fill(0.2));
+
+  useEffect(() => {
+    // Shift the history left and append the newest level with slight jitter so
+    // the wave scrolls like WhatsApp's, even between metering updates.
+    const tick = setInterval(() => {
+      setBars((prev) => {
+        const next = prev.slice(1);
+        const jitter = 0.82 + Math.random() * 0.36;
+        next.push(Math.min(1, Math.max(0.12, level * jitter)));
+        return next;
+      });
+    }, 120);
+    return () => clearInterval(tick);
+  }, [level]);
+
+  return (
+    <View style={waveStyles.row}>
+      {bars.map((h, i) => (
+        <View
+          key={i}
+          style={[
+            waveStyles.bar,
+            {
+              height: 6 + h * 22,
+              backgroundColor: h > 0.72 ? tika.amber : tika.tealBright,
+              opacity: 0.45 + h * 0.55,
+            },
+          ]}
+        />
+      ))}
+    </View>
+  );
+});
+
+const waveStyles = StyleSheet.create({
+  row: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 3, height: 34, overflow: 'hidden' },
+  bar: { width: 3.5, borderRadius: 99 },
+});
+
+/**
+ * Structured site cards for a location answer (mockup's "nearest site" card):
+ * mint card, map chip, name + distance (+ opening hours once the backend has
+ * them), and a full-width teal Directions button per site.
+ */
+const SiteCards = memo(function SiteCards({
+  sites,
+  directionsLabel,
+  isRtl,
+}: {
+  sites: SiteInfo[];
+  directionsLabel: string;
+  isRtl: boolean;
+}) {
+  return (
+    <View style={siteStyles.stack}>
+      {sites.map((site, i) => {
+        const meta = [
+          site.distance_km != null ? `${site.distance_km} km` : site.area || null,
+          // Timing (opening hours) is forward-compatible: the backend sends
+          // null until site timings exist, and the row simply omits it.
+          site.timing || null,
+        ]
+          .filter(Boolean)
+          .join(' · ');
+        return (
+          <View key={`${site.name}-${i}`} style={siteStyles.card}>
+            <View style={[siteStyles.topRow, isRtl && styles.rowReverse]}>
+              <View style={siteStyles.mapChip}>
+                <Feather name="map-pin" size={22} color={tika.teal} />
+              </View>
+              <View style={siteStyles.info}>
+                <Text style={[siteStyles.name, isRtl ? styles.rtl : null]} numberOfLines={2}>
+                  {site.name}
+                </Text>
+                {meta !== '' && (
+                  <Text style={[siteStyles.meta, isRtl ? styles.rtl : null]} numberOfLines={2}>
+                    {meta}
+                  </Text>
+                )}
+              </View>
+            </View>
+            {!!site.maps_url && (
+              <Pressable
+                onPress={() => Linking.openURL(site.maps_url!).catch(() => {})}
+                android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
+                style={({ pressed }) => [siteStyles.directionsBtn, pressed && { opacity: 0.9 }]}
+                accessibilityRole="button"
+                accessibilityLabel={`${directionsLabel}: ${site.name}`}
+              >
+                <Feather name="map-pin" size={15} color="#fff" />
+                <Text style={siteStyles.directionsText}>{directionsLabel}</Text>
+              </Pressable>
+            )}
+          </View>
+        );
+      })}
+    </View>
+  );
+});
+
+const siteStyles = StyleSheet.create({
+  stack: { gap: 10, marginTop: 8, maxWidth: '88%' },
+  card: {
+    backgroundColor: tika.mint,
+    borderRadius: 20,
+    padding: 14,
+    gap: 12,
+    shadowColor: tika.shadow,
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+  },
+  topRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  mapChip: {
+    width: 56,
+    height: 56,
+    borderRadius: 14,
+    backgroundColor: '#DCE9E3',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  info: { flex: 1, gap: 3 },
+  name: { fontSize: 15, fontWeight: '800', color: tika.ink, lineHeight: 20 },
+  meta: { fontSize: 13, color: tika.inkSoft },
+  directionsBtn: {
+    minHeight: 48,
+    borderRadius: 999,
+    backgroundColor: tika.teal,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  directionsText: { color: '#fff', fontSize: 14.5, fontWeight: '800' },
+});
 
 /** A single chat bubble — memoized so streaming only re-renders the live message. */
 const MessageBubble = memo(function MessageBubble({
   item,
   isRtl,
+  readAloudLabel,
+  directionsLabel,
   onCopy,
   onSpeak,
   onFeedback,
@@ -396,6 +569,8 @@ const MessageBubble = memo(function MessageBubble({
 }: {
   item: Msg;
   isRtl: boolean;
+  readAloudLabel: string;
+  directionsLabel: string;
   onCopy: (text: string) => void;
   onSpeak: (text: string) => void;
   onFeedback: (msg: Msg, rating: FeedbackRating) => void;
@@ -405,130 +580,118 @@ const MessageBubble = memo(function MessageBubble({
   const isUser = item.role === 'user';
   const canPlay = !item.pending && item.content.trim().length > 0;
   const canInteract = !item.pending && item.serverId && !isUser;
+  const hasSites = !isUser && !!item.sites?.length;
+  // With site cards shown, the raw 📍 link list in the text is a duplicate.
+  const displayContent = hasSites ? stripMapsLines(item.content) : item.content;
+
+  // Chat mirrors in RTL (mockup 1d): user on the left, assistant on the right,
+  // with the bubble "tail" corner flipped to match.
+  const userSelf = isRtl ? styles.rowLeft : styles.rowRight;
+  const botSelf = isRtl ? styles.rowRight : styles.rowLeft;
+
+  // Status pill while the answer is being prepared (mockup's typing pill).
+  if (item.pending && !isUser && item.content === '') {
+    return (
+      <View style={[styles.row, botSelf]}>
+        <View style={[styles.statusPill, isRtl && styles.rowReverse]}>
+          <TypingDots size={7} />
+          {item.status ? (
+            <Text style={[styles.statusText, isRtl ? styles.rtl : null]} numberOfLines={2}>
+              {item.status}
+            </Text>
+          ) : null}
+        </View>
+      </View>
+    );
+  }
 
   return (
-    <View style={[styles.row, isUser ? styles.rowRight : styles.rowLeft]}>
-      {!isUser && (
-        <View style={styles.botAvatar}>
-          <BrandMark size={20} />
-        </View>
-      )}
-      <View style={[styles.bubbleWrapper, isUser && styles.bubbleWrapperUser]}>
-        <View style={[styles.bubbleRow, isUser && styles.bubbleRowUser]}>
-          {/* Play button on the left for bot messages */}
-          {!isUser && canPlay && (
-            <Pressable
-              onPress={() => onSpeak(item.content)}
-              android_ripple={{ color: 'rgba(7,32,63,0.12)' }}
-              style={({ pressed }) => [styles.playBtnInline, styles.playBtnBot, pressed && { opacity: 0.7 }]}
-            >
-              <Icon source="volume-high" size={18} color={brand.indigo} />
-            </Pressable>
-          )}
-          <Pressable
-            onLongPress={() => onCopy(item.content)}
-            delayLongPress={320}
-            android_ripple={{ color: 'rgba(7,32,63,0.06)' }}
-            style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleBot]}
-          >
-            {item.pending && item.content === '' ? (
-              <View style={styles.pendingRow}>
-                <TypingDots size={6} color={brand.amber} />
-                {item.status ? (
-                  <Text style={[styles.statusText, isRtl ? styles.rtl : null]} numberOfLines={2}>
-                    {item.status}
-                  </Text>
-                ) : null}
-              </View>
-            ) : isUser ? (
+    <View style={[styles.row, isUser ? userSelf : botSelf]}>
+      <View style={styles.bubbleWrapper}>
+        <Pressable
+          onLongPress={() => onCopy(item.content)}
+          delayLongPress={320}
+          android_ripple={{ color: 'rgba(11,36,64,0.05)' }}
+          style={[
+            styles.bubble,
+            isUser ? styles.bubbleUser : styles.bubbleBot,
+            isUser
+              ? (isRtl ? styles.tailBottomLeft : styles.tailBottomRight)
+              : (isRtl ? styles.tailBottomRight : styles.tailBottomLeft),
+          ]}
+        >
+          {isUser ? (
+            <View style={[styles.userContent, isRtl && styles.rowReverse]}>
+              {item.voice && (
+                <Feather name="mic" size={15} color="rgba(255,255,255,0.85)" style={styles.voiceBadge} />
+              )}
               <Text
                 selectable
-                style={[
-                  styles.bubbleText,
-                  { color: palette.userBubbleText },
-                  isRtl ? styles.rtl : null,
-                ]}
+                style={[styles.bubbleText, { color: palette.userBubbleText, flexShrink: 1 }, isRtl ? styles.rtl : null]}
               >
                 {item.content}
               </Text>
-            ) : (
-              <Markdown
-                style={isRtl ? mdStylesBotRtl : mdStylesBot}
-                onLinkPress={(url) => {
-                  // Open Google Maps pins (and any other links) in the maps/browser app.
-                  Linking.openURL(url).catch(() => {});
-                  return false;
-                }}
-              >
-                {item.content}
-              </Markdown>
-            )}
-          </Pressable>
-          {/* Play button on the right for user messages */}
-          {isUser && canPlay && (
-            <Pressable
-              onPress={() => onSpeak(item.content)}
-              android_ripple={{ color: 'rgba(244,238,227,0.25)' }}
-              style={({ pressed }) => [styles.playBtnInline, styles.playBtnUser, pressed && { opacity: 0.7 }]}
+            </View>
+          ) : (
+            <Markdown
+              style={isRtl ? mdStylesBotRtl : mdStylesBot}
+              onLinkPress={(url) => {
+                // Open Google Maps pins (and any other links) in the maps/browser app.
+                Linking.openURL(url).catch(() => {});
+                return false;
+              }}
             >
-              <Icon source="volume-high" size={18} color={brand.cream} />
-            </Pressable>
+              {displayContent}
+            </Markdown>
           )}
-        </View>
-        {/* Feedback & Bookmark actions for assistant messages */}
-        {canInteract && (
-          <View style={styles.msgActions}>
+        </Pressable>
+
+        {/* Structured site cards for location answers */}
+        {hasSites && (
+          <SiteCards sites={item.sites!} directionsLabel={directionsLabel} isRtl={isRtl} />
+        )}
+
+        {/* Read-aloud pill + feedback actions under assistant answers */}
+        {!isUser && canPlay && !item.pending && (
+          <View style={[styles.msgActions, isRtl && styles.rowReverse]}>
             <Pressable
-              onPress={() => onFeedback(item, 'up')}
-              style={({ pressed }) => [
-                styles.actionBtn,
-                item.feedback === 'up' && styles.actionBtnActive,
-                pressed && { opacity: 0.7 },
-              ]}
+              onPress={() => onSpeak(displayContent)}
+              android_ripple={{ color: 'rgba(14,124,102,0.12)' }}
+              style={({ pressed }) => [styles.readAloudPill, isRtl && styles.rowReverse, pressed && { opacity: 0.8 }]}
+              accessibilityRole="button"
+              accessibilityLabel={readAloudLabel}
             >
-              <Icon
-                source={item.feedback === 'up' ? 'thumb-up' : 'thumb-up-outline'}
-                size={16}
-                color={item.feedback === 'up' ? brand.indigo : 'rgba(7,32,63,0.5)'}
-              />
+              <Feather name="volume-2" size={15} color={tika.teal} />
+              <Text style={styles.readAloudText}>{readAloudLabel}</Text>
             </Pressable>
-            <Pressable
-              onPress={() => onFeedback(item, 'down')}
-              style={({ pressed }) => [
-                styles.actionBtn,
-                item.feedback === 'down' && styles.actionBtnActive,
-                pressed && { opacity: 0.7 },
-              ]}
-            >
-              <Icon
-                source={item.feedback === 'down' ? 'thumb-down' : 'thumb-down-outline'}
-                size={16}
-                color={item.feedback === 'down' ? '#B3261E' : 'rgba(7,32,63,0.5)'}
-              />
-            </Pressable>
-            <Pressable
-              onPress={() => onBookmark(item)}
-              style={({ pressed }) => [
-                styles.actionBtn,
-                item.bookmarked && styles.actionBtnActive,
-                pressed && { opacity: 0.7 },
-              ]}
-            >
-              <Icon
-                source={item.bookmarked ? 'bookmark' : 'bookmark-outline'}
-                size={16}
-                color={item.bookmarked ? brand.amber : 'rgba(7,32,63,0.5)'}
-              />
-            </Pressable>
-            <Pressable
-              onPress={() => onShare(item.content)}
-              style={({ pressed }) => [
-                styles.actionBtn,
-                pressed && { opacity: 0.7 },
-              ]}
-            >
-              <Icon source="share-variant-outline" size={16} color="rgba(7,32,63,0.5)" />
-            </Pressable>
+            {canInteract && (
+              <>
+                <Pressable
+                  onPress={() => onFeedback(item, 'up')}
+                  style={({ pressed }) => [styles.actionBtn, item.feedback === 'up' && styles.actionBtnActive, pressed && { opacity: 0.7 }]}
+                >
+                  <Feather name="thumbs-up" size={15} color={item.feedback === 'up' ? tika.teal : tika.inkFaint} />
+                </Pressable>
+                <Pressable
+                  onPress={() => onFeedback(item, 'down')}
+                  style={({ pressed }) => [styles.actionBtn, item.feedback === 'down' && styles.actionBtnActive, pressed && { opacity: 0.7 }]}
+                >
+                  <Feather name="thumbs-down" size={15} color={item.feedback === 'down' ? tika.coral : tika.inkFaint} />
+                </Pressable>
+                <Pressable
+                  onPress={() => onBookmark(item)}
+                  style={({ pressed }) => [styles.actionBtn, item.bookmarked && styles.actionBtnActive, pressed && { opacity: 0.7 }]}
+                >
+                  <Feather name="bookmark" size={15} color={item.bookmarked ? tika.amber : tika.inkFaint} />
+                </Pressable>
+                <Pressable
+                  onPress={() => onShare(item.content)}
+                  style={({ pressed }) => [styles.actionBtn, pressed && { opacity: 0.7 }]}
+                >
+                  <Feather name="share-2" size={15} color={tika.inkFaint} />
+                </Pressable>
+              </>
+            )}
           </View>
         )}
       </View>
@@ -537,7 +700,6 @@ const MessageBubble = memo(function MessageBubble({
 });
 
 export default function ChatScreen({ route, navigation }: Props) {
-  const theme = useTheme();
   const { language } = useLanguage();
   const strings = COPY[language];
   const isRtl = language === 'ur' || language === 'fa' || language === 'ps' || language === 'sd';
@@ -563,10 +725,14 @@ export default function ChatScreen({ route, navigation }: Props) {
   // Captured once per session; sent with messages so the assistant can answer
   // "where is my nearest site?". Null until granted/fixed (sent omitted then).
   const locationRef = useRef<LatLng | null>(null);
-  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  // Speaker gender detected from the most recent voice message. Drives the TTS
+  // voice so a male speaker is answered in a male voice (female is the default).
+  const voiceGenderRef = useRef<'male' | 'female' | null>(null);
+  // Metering needs to be requested explicitly — it powers the recording wave.
+  const recorder = useAudioRecorder({ ...RecordingPresets.HIGH_QUALITY, isMeteringEnabled: true });
   const recorderState = useAudioRecorderState(recorder);
-  // Plays the server's natural Gemini TTS (reliable for ur/en/rud, where the
-  // on-device voice is often missing). Pashto/Sindhi fall back to on-device.
+  // Plays the server's natural TTS voice (reliable across devices); languages
+  // without a server voice fall back to the on-device engine.
   const ttsPlayer = useAudioPlayer(null);
   const recordingPulse = useRef(new Animated.Value(1)).current;
 
@@ -591,11 +757,12 @@ export default function ChatScreen({ route, navigation }: Props) {
     refreshQuickAnswersCache(language);
   }, [language]);
 
+  // Soft pulse on the recording dot (WhatsApp-style).
   useEffect(() => {
     if (recorderState.isRecording) {
       const loop = Animated.loop(
         Animated.sequence([
-          Animated.timing(recordingPulse, { toValue: 1.14, duration: 600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+          Animated.timing(recordingPulse, { toValue: 0.25, duration: 600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
           Animated.timing(recordingPulse, { toValue: 1.0, duration: 600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
         ]),
       );
@@ -700,28 +867,26 @@ export default function ChatScreen({ route, navigation }: Props) {
   }, [ttsPlayer]);
 
   /**
-   * Read an answer aloud. Primary path is the server's natural Gemini voice
-   * (reliable across devices); if synthesis is unavailable — a server/quota
-   * failure, offline, or an unsupported language like Pashto/Sindhi — we fall
-   * back to the on-device voice. Markdown is stripped either way.
+   * Read an answer aloud. Primary path is the server's natural voice (reliable
+   * across devices); if synthesis is unavailable — a server/quota failure,
+   * offline, or an unsupported language — we fall back to the on-device voice.
+   * Markdown (and map-pin link lines) are stripped either way.
    */
   const speak = useCallback(
     async (text: string) => {
       if (muted || !text.trim()) return;
       stopSpeaking();
-      const clean = stripMarkdownForSpeech(text);
+      const clean = stripMarkdownForSpeech(stripMapsLines(text));
       if (!clean) return;
 
       // Voice follows the answer's own language, not the app's UI language.
-      // All languages are served now: en/ur/rud/ps via Edge, sd via OpenAI.
-      // On any server failure the catch below falls back to the on-device voice.
       const ttsLang = ttsLangForText(clean, language);
 
-      const url = ttsUrl(clean, ttsLang);
+      const url = ttsUrl(clean, ttsLang, voiceGenderRef.current);
       try {
         // Validate synthesis before handing the URL to the player, so a failure
         // cleanly falls back instead of playing silence. The backend caches the
-        // WAV, so the player's fetch is cheap.
+        // audio, so the player's fetch is cheap.
         const res = await fetch(url);
         if (!res.ok) throw new Error('tts unavailable');
         // Route audio to the loudspeaker — recording mode can otherwise pin
@@ -744,10 +909,14 @@ export default function ChatScreen({ route, navigation }: Props) {
    * on-device voice covers it so nothing stalls.
    */
   const revealWithAudio = useCallback(
-    (placeholderId: string, content: string, serverId?: number): Promise<void> => {
+    (placeholderId: string, content: string, serverId?: number, sites?: SiteInfo[]): Promise<void> => {
       const reveal = () =>
         setMessages((m) =>
-          m.map((x) => (x.id === placeholderId ? { ...x, pending: false, content, serverId } : x)),
+          m.map((x) =>
+            x.id === placeholderId
+              ? { ...x, pending: false, content, serverId, sites: sites?.length ? sites : undefined }
+              : x,
+          ),
         );
 
       if (muted || !content.trim()) {
@@ -755,9 +924,9 @@ export default function ChatScreen({ route, navigation }: Props) {
         return Promise.resolve();
       }
 
-      const clean = stripMarkdownForSpeech(content);
+      const clean = stripMarkdownForSpeech(stripMapsLines(content));
       const ttsLang = ttsLangForText(clean, language);
-      const url = ttsUrl(clean, ttsLang);
+      const url = ttsUrl(clean, ttsLang, voiceGenderRef.current);
 
       return Promise.race<string | null>([
         fetch(url)
@@ -888,7 +1057,7 @@ export default function ChatScreen({ route, navigation }: Props) {
         );
         setChatId(res.chat_id);
         persistSession(res.chat_id, titleForCache);
-        await revealWithAudio(placeholderId, res.reply.content, res.reply.id);
+        await revealWithAudio(placeholderId, res.reply.content, res.reply.id, res.reply.sites);
       } catch (streamErr: any) {
         if (sawDelta) {
           setError(streamErr?.message ?? strings.errorNet);
@@ -899,7 +1068,7 @@ export default function ChatScreen({ route, navigation }: Props) {
             const res = await sendText({ deviceId, message: text, chatId, language, location: locationRef.current });
             setChatId(res.chat_id);
             persistSession(res.chat_id, titleForCache);
-            await revealWithAudio(placeholderId, res.reply.content, res.reply.id);
+            await revealWithAudio(placeholderId, res.reply.content, res.reply.id, res.reply.sites);
           } catch (e: any) {
             // Last resort: answer from the offline quick-answers cache.
             const cached = await getCachedQuickAnswers();
@@ -925,6 +1094,7 @@ export default function ChatScreen({ route, navigation }: Props) {
   const startRecording = useCallback(async () => {
     if (!deviceId || busy || recorderState.isRecording) return;
     setError(null);
+    stopSpeaking();
     try {
       // Re-enable the recording session (playback may have switched it off).
       await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
@@ -933,7 +1103,15 @@ export default function ChatScreen({ route, navigation }: Props) {
     } catch (e: any) {
       setError(e?.message ?? strings.errorMic);
     }
-  }, [busy, deviceId, recorder, recorderState.isRecording, strings.errorMic]);
+  }, [busy, deviceId, recorder, recorderState.isRecording, stopSpeaking, strings.errorMic]);
+
+  /** WhatsApp-style cancel: stop the recorder and throw the clip away. */
+  const cancelRecording = useCallback(async () => {
+    if (!recorderState.isRecording) return;
+    try {
+      await recorder.stop();
+    } catch {}
+  }, [recorder, recorderState.isRecording]);
 
   const stopRecordingAndSend = useCallback(async () => {
     if (!deviceId || !recorderState.isRecording) return;
@@ -952,13 +1130,18 @@ export default function ChatScreen({ route, navigation }: Props) {
       const placeholderId = `pv${Date.now()}`;
       setMessages((m) => [
         ...m,
-        { id: userId, role: 'user', content: strings.voicePlaceholder, pending: true },
+        { id: userId, role: 'user', content: strings.voicePlaceholder, pending: true, voice: true },
         { id: placeholderId, role: 'assistant', content: '', pending: true, status: statusLabel('searching', language) },
       ]);
       scroll();
 
       const res = await sendAudio({ deviceId, audioUri: uri, audioMime: 'audio/m4a', chatId, language, location: locationRef.current });
       setChatId(res.chat_id);
+      // Remember the speaker's gender so this reply (and later replies in the
+      // chat) are read back in a matching voice. Unknown keeps the default.
+      if (res.voice_gender === 'male' || res.voice_gender === 'female') {
+        voiceGenderRef.current = res.voice_gender;
+      }
       const transcript = res.transcript?.trim() || strings.voiceTranscriptFallback;
       const freshTitle = isPlaceholderTitleText(chatTitle) && !chatId;
       if (freshTitle) setChatTitle(transcript.slice(0, 60));
@@ -969,7 +1152,7 @@ export default function ChatScreen({ route, navigation }: Props) {
         m.map((x) => (x.id === userId ? { ...x, pending: false, content: transcript } : x)),
       );
       persistSession(res.chat_id, freshTitle ? transcript.slice(0, 60) : chatTitle);
-      await revealWithAudio(placeholderId, res.reply.content, res.reply.id);
+      await revealWithAudio(placeholderId, res.reply.content, res.reply.id, res.reply.sites);
     } catch (e: any) {
       setMessages((m) => m.filter((x) => !x.pending));
       setError(e?.message ?? strings.errorVoice);
@@ -979,19 +1162,13 @@ export default function ChatScreen({ route, navigation }: Props) {
     }
   }, [chatId, chatTitle, deviceId, language, persistSession, recorder, recorderState.isRecording, revealWithAudio, scroll, strings.errorNoAudio, strings.errorVoice, strings.voicePlaceholder, strings.voiceTranscriptFallback]);
 
-  const toggleRecording = useCallback(() => {
-    if (recorderState.isRecording) {
-      stopRecordingAndSend();
-    } else {
-      startRecording();
-    }
-  }, [recorderState.isRecording, startRecording, stopRecordingAndSend]);
-
   const renderItem = useCallback(
     ({ item }: { item: Msg }) => (
       <MessageBubble
         item={item}
         isRtl={isRtl}
+        readAloudLabel={strings.readAloud}
+        directionsLabel={strings.directions}
         onCopy={copyMessage}
         onSpeak={speak}
         onFeedback={handleFeedback}
@@ -999,59 +1176,85 @@ export default function ChatScreen({ route, navigation }: Props) {
         onShare={handleShare}
       />
     ),
-    [isRtl, copyMessage, speak, handleFeedback, handleBookmark, handleShare],
+    [isRtl, strings.readAloud, strings.directions, copyMessage, speak, handleFeedback, handleBookmark, handleShare],
   );
 
+  /** Home (empty chat) — the mockup's Home screen: greeting, quick-question
+   *  cards, scan pill and the big amber "tap to speak" button. */
   const empty = useMemo(
     () => (
-      <View style={styles.emptyChat}>
-        <View style={styles.emptyMarkRing}>
-          <BrandMark size={72} />
-        </View>
-        <Text style={styles.eyebrow}>{strings.eyebrow}</Text>
-        <Text style={[styles.emptyHeadline, isRtl ? styles.rtl : null]}>{strings.greeting}</Text>
-        <Text style={[styles.emptyHint, isRtl ? styles.rtl : null]}>{strings.greetingHint}</Text>
-
-        {/* Voice prompt with mic icon */}
-        <View style={styles.voicePromptContainer}>
-          <Text style={styles.voicePromptIcon}>🎤</Text>
-          <Text style={[styles.voicePromptText, isRtl ? styles.rtl : null]}>{strings.voicePrompt}</Text>
+      <View style={styles.home}>
+        <View style={styles.homeGreeting}>
+          <Text style={[styles.homeHeadline, isRtl ? styles.rtlCenterless : null]}>{strings.greeting}</Text>
+          <Text style={[styles.homeHint, isRtl ? styles.rtlCenterless : null]}>{strings.greetingHint}</Text>
         </View>
 
-        <Text style={[styles.suggestionsLabel, isRtl ? styles.rtl : null]}>
-          {language === 'en' ? 'Try asking:' : language === 'ur' ? 'یہ پوچھیں:' : language === 'fa' ? 'این‌ها را بپرسید:' : language === 'ps' ? 'دا وپوښتئ:' : 'هي پڇو:'}
-        </Text>
-        <View style={styles.suggestions}>
+        <View style={styles.quickCards}>
           {strings.suggestions.map((q, index) => (
             <Pressable
               key={q}
-              onPress={() => {
-                setInput(q);
-                // Auto-send after setting input
-                setTimeout(() => sendTextMessage(q), 150);
-              }}
-              android_ripple={{ color: 'rgba(7,32,63,0.08)' }}
-              style={({ pressed }) => [styles.suggestionCard, pressed && { opacity: 0.85 }]}
+              onPress={() => sendTextMessage(q)}
+              android_ripple={{ color: 'rgba(14,124,102,0.08)' }}
+              style={({ pressed }) => [styles.quickCard, isRtl && styles.rowReverse, pressed && { opacity: 0.88 }]}
               accessibilityRole="button"
               accessibilityLabel={q}
               accessibilityHint="Tap to ask this question"
             >
-              <View style={[styles.suggestionNumber, { backgroundColor: index === 0 ? brand.amber : index === 1 ? brand.indigo : brand.indigoSoft }]}>
-                <Text style={styles.suggestionNumberText}>{index + 1}</Text>
+              <View style={styles.quickCardIcon}>
+                <Feather name={SUGGESTION_ICONS[index] ?? 'help-circle'} size={22} color={tika.teal} />
               </View>
-              <Text style={[styles.suggestionText, isRtl ? styles.rtl : null]} numberOfLines={2}>
+              <Text style={[styles.quickCardText, isRtl ? styles.rtl : null]} numberOfLines={2}>
                 {q}
               </Text>
-              <Text style={styles.suggestionArrow}>→</Text>
+              <Feather
+                name={isRtl ? 'chevron-left' : 'chevron-right'}
+                size={16}
+                color={tika.inkFaint}
+              />
             </Pressable>
           ))}
         </View>
+
+        <Pressable
+          onPress={() => navigation.navigate('ScanCard')}
+          android_ripple={{ color: 'rgba(14,124,102,0.08)' }}
+          style={({ pressed }) => [styles.scanPill, isRtl && styles.rowReverse, pressed && { opacity: 0.85 }]}
+          accessibilityRole="button"
+          accessibilityLabel={strings.scanCard}
+        >
+          <Feather name="camera" size={18} color={tika.teal} />
+          <Text style={styles.scanPillText}>{strings.scanCard}</Text>
+        </Pressable>
+
+        <View style={styles.homeMicWrap}>
+          <Pressable
+            onPress={startRecording}
+            android_ripple={{ color: 'rgba(255,255,255,0.25)', borderless: true, radius: 44 }}
+            style={({ pressed }) => [styles.homeMic, pressed && { transform: [{ scale: 0.97 }] }]}
+            accessibilityRole="button"
+            accessibilityLabel={strings.tapToSpeak}
+          >
+            <Feather name="mic" size={32} color="#fff" />
+          </Pressable>
+          <Text style={styles.homeMicLabel}>{strings.tapToSpeak}</Text>
+        </View>
       </View>
     ),
-    [isRtl, language, sendTextMessage, strings.eyebrow, strings.greeting, strings.greetingHint, strings.suggestions, strings.voicePrompt],
+    [isRtl, navigation, sendTextMessage, startRecording, strings.greeting, strings.greetingHint, strings.scanCard, strings.suggestions, strings.tapToSpeak],
   );
 
   const hasInput = input.trim().length > 0;
+  const isRecording = recorderState.isRecording;
+
+  // Normalized 0..1 mic level for the recording wave (metering is dBFS ≤ 0).
+  const meterLevel = useMemo(() => {
+    const m = recorderState.metering;
+    if (typeof m !== 'number' || Number.isNaN(m)) return 0.5;
+    return Math.min(1, Math.max(0, (m + 50) / 50));
+  }, [recorderState.metering]);
+
+  const recSeconds = Math.floor((recorderState.durationMillis ?? 0) / 1000);
+  const recTimer = `${String(Math.floor(recSeconds / 60)).padStart(1, '0')}:${String(recSeconds % 60).padStart(2, '0')}`;
 
   // Show quick replies after the last assistant message if not busy
   const showQuickReplies = useMemo(() => {
@@ -1061,20 +1264,18 @@ export default function ChatScreen({ route, navigation }: Props) {
   }, [busy, messages]);
 
   const handleQuickReply = useCallback((q: string) => {
-    setInput(q);
-    // Auto-send after a short delay
-    setTimeout(() => sendTextMessage(q), 100);
+    sendTextMessage(q);
   }, [sendTextMessage]);
 
   const quickRepliesFooter = useMemo(
     () =>
       showQuickReplies ? (
-        <View style={styles.quickReplies}>
+        <View style={[styles.quickReplies, isRtl && styles.rowReverse]}>
           {strings.quickReplies.map((q) => (
             <Pressable
               key={q}
               onPress={() => handleQuickReply(q)}
-              android_ripple={{ color: 'rgba(7,32,63,0.08)' }}
+              android_ripple={{ color: 'rgba(14,124,102,0.1)' }}
               style={({ pressed }) => [styles.quickReplyChip, pressed && { opacity: 0.85 }]}
             >
               <Text style={[styles.quickReplyText, isRtl ? styles.rtl : null]} numberOfLines={1}>
@@ -1087,67 +1288,73 @@ export default function ChatScreen({ route, navigation }: Props) {
     [showQuickReplies, strings.quickReplies, isRtl, handleQuickReply]
   );
 
-  return (
-    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      <StatusBar barStyle="light-content" backgroundColor={brand.ink} />
+  const dateChipHeader = useMemo(
+    () =>
+      messages.length > 0 ? (
+        <View style={styles.dateChipWrap}>
+          <Text style={styles.dateChipText}>{strings.todayChip}</Text>
+        </View>
+      ) : null,
+    [messages.length, strings.todayChip],
+  );
 
-      <LinearGradient
-        colors={[brand.ink, brand.indigo]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.header}
-      >
-        <View style={styles.headerRow}>
-          <Pressable
-            onPress={() => navigation.navigate('Sessions')}
-            android_ripple={{ color: 'rgba(244,238,227,0.2)', borderless: true }}
-            style={styles.headerIconBtn}
-            accessibilityRole="button"
-            accessibilityLabel="Chat history"
-          >
-            <Icon source="menu" size={26} color={brand.cream} />
-          </Pressable>
-          <View style={styles.headerCenter}>
-            <View style={styles.headerBrand}>
-              <BrandMark size={22} />
-              <Text style={styles.headerBrandText}>Tika Dost</Text>
-            </View>
-          </View>
-          <View style={styles.headerActions}>
-            <LanguageSwitcher />
-            <Pressable
-              onPress={() => navigation.navigate('ScanCard')}
-              android_ripple={{ color: 'rgba(244,238,227,0.2)', borderless: true }}
-              style={styles.headerIconBtn}
-              accessibilityRole="button"
-              accessibilityLabel="Scan vaccination card"
-            >
-              <Icon source="card-account-details-outline" size={22} color={brand.cream} />
-            </Pressable>
-            <Pressable
-              onPress={startNewChat}
-              android_ripple={{ color: 'rgba(244,238,227,0.2)', borderless: true }}
-              style={styles.headerIconBtn}
-              accessibilityRole="button"
-              accessibilityLabel="New chat"
-            >
-              <Icon source="plus" size={24} color={brand.cream} />
-            </Pressable>
-            <Pressable
-              onPress={() => {
-                setMuted((m) => !m);
-                stopSpeaking();
-              }}
-              android_ripple={{ color: 'rgba(244,238,227,0.2)', borderless: true }}
-              style={[styles.headerMuteBtn, muted && styles.headerMuteBtnActive]}
-              accessibilityRole="button"
-              accessibilityLabel={muted ? 'Unmute audio' : 'Mute audio'}
-            >
-              <Text style={styles.headerMuteIcon}>{muted ? '🔇' : '🔊'}</Text>
-            </Pressable>
+  return (
+    <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor={tika.card} />
+
+      {/* Header — white bar with the animated mascot (mockup chat header) */}
+      <View style={[styles.header, isRtl && styles.rowReverse]}>
+        <Pressable
+          onPress={() => navigation.navigate('Sessions')}
+          android_ripple={{ color: 'rgba(14,124,102,0.12)', borderless: true }}
+          style={styles.headerIconBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Chat history"
+        >
+          <Feather name="menu" size={20} color={tika.teal} />
+        </Pressable>
+
+        <TikaMascot size={34} />
+
+        <View style={styles.headerTitleCol}>
+          <Text style={styles.headerTitle} numberOfLines={1}>
+            {strings.brandTitle}
+          </Text>
+          <View style={[styles.headerTagRow, isRtl && styles.rowReverse]}>
+            <View style={styles.onlineDot} />
+            <Text style={styles.headerTag} numberOfLines={1}>
+              {strings.helperTag}
+            </Text>
           </View>
         </View>
-      </LinearGradient>
+
+        <View style={styles.headerSpacer} />
+
+        <LanguageSwitcher />
+
+        <Pressable
+          onPress={() => {
+            setMuted((m) => !m);
+            stopSpeaking();
+          }}
+          android_ripple={{ color: 'rgba(14,124,102,0.12)', borderless: true }}
+          style={[styles.headerIconBtn, muted && styles.headerIconBtnMuted]}
+          accessibilityRole="button"
+          accessibilityLabel={muted ? 'Unmute audio' : 'Mute audio'}
+        >
+          <Feather name={muted ? 'volume-x' : 'volume-2'} size={19} color={muted ? tika.coral : tika.teal} />
+        </Pressable>
+
+        <Pressable
+          onPress={startNewChat}
+          android_ripple={{ color: 'rgba(14,124,102,0.12)', borderless: true }}
+          style={styles.headerIconBtn}
+          accessibilityRole="button"
+          accessibilityLabel="New chat"
+        >
+          <Feather name="plus" size={20} color={tika.teal} />
+        </Pressable>
+      </View>
 
       {loadingHistory ? (
         <View style={styles.loading}>
@@ -1161,6 +1368,7 @@ export default function ChatScreen({ route, navigation }: Props) {
             keyExtractor={(m) => m.id}
             renderItem={renderItem}
             contentContainerStyle={messages.length ? styles.list : styles.listEmpty}
+            ListHeaderComponent={dateChipHeader}
             ListEmptyComponent={empty}
             ListFooterComponent={quickRepliesFooter}
             onContentSizeChange={followIfAtBottom}
@@ -1174,80 +1382,95 @@ export default function ChatScreen({ route, navigation }: Props) {
             windowSize={11}
           />
 
+          {/* Composer — amber mic + input pill; morphs into the WhatsApp-style
+              recording bar (timer + live wave + cancel/send) while recording. */}
           <View style={styles.composerWrap}>
-            <View style={styles.composer}>
-              <Pressable
-                onPress={() => navigation.navigate('ScanCard')}
-                disabled={busy}
-                android_ripple={{ color: 'rgba(7,32,63,0.10)', borderless: true }}
-                style={({ pressed }) => [styles.scanBtn, pressed && { opacity: 0.6 }]}
-                accessibilityRole="button"
-                accessibilityLabel="Scan vaccination card"
-              >
-                <Icon source="card-account-details-outline" size={24} color={brand.indigo} />
-              </Pressable>
-              <TextInput
-                mode="flat"
-                dense
-                multiline
-                value={input}
-                onChangeText={setInput}
-                placeholder={strings.placeholder}
-                placeholderTextColor="rgba(7,32,63,0.42)"
-                style={styles.input}
-                contentStyle={[styles.inputContent, isRtl ? styles.rtl : null]}
-                underlineStyle={{ display: 'none' }}
-                editable={!busy}
-                cursorColor={brand.indigo}
-              />
-
-              {hasInput ? (
+            {isRecording ? (
+              <View style={[styles.composer, isRtl && styles.rowReverse]}>
                 <Pressable
-                  onPress={() => sendTextMessage()}
-                  disabled={busy}
-                  android_ripple={{ color: 'rgba(244,238,227,0.25)' }}
-                  style={({ pressed }) => [
-                    styles.sendBtn,
-                    busy && { opacity: 0.5 },
-                    pressed && { opacity: 0.85 },
-                  ]}
+                  onPress={cancelRecording}
+                  android_ripple={{ color: 'rgba(229,103,75,0.15)', borderless: true }}
+                  style={styles.recCancelBtn}
                   accessibilityRole="button"
-                  accessibilityLabel="Send message"
+                  accessibilityLabel="Cancel recording"
                 >
-                  <Icon source="arrow-up" size={24} color={brand.cream} />
+                  <Feather name="trash-2" size={22} color={tika.coral} />
                 </Pressable>
-              ) : (
-                <Animated.View style={{ transform: [{ scale: recordingPulse }] }}>
+                <View style={[styles.recordingBar, isRtl && styles.rowReverse]}>
+                  <Animated.View style={[styles.recDot, { opacity: recordingPulse }]} />
+                  <Text style={styles.recTimer}>{recTimer}</Text>
+                  <RecordingWave level={meterLevel} />
+                </View>
+                <Pressable
+                  onPress={stopRecordingAndSend}
+                  android_ripple={{ color: 'rgba(255,255,255,0.25)' }}
+                  style={({ pressed }) => [styles.recSendBtn, pressed && { opacity: 0.9 }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Send voice message"
+                >
+                  <Feather name="send" size={22} color="#fff" />
+                </Pressable>
+              </View>
+            ) : (
+              <View style={[styles.composer, isRtl && styles.rowReverse]}>
+                <Pressable
+                  onPress={startRecording}
+                  disabled={busy}
+                  android_ripple={{ color: 'rgba(255,255,255,0.25)', borderless: true, radius: 30 }}
+                  style={({ pressed }) => [styles.micBtn, busy && { opacity: 0.5 }, pressed && { transform: [{ scale: 0.96 }] }]}
+                  accessibilityRole="button"
+                  accessibilityLabel={strings.tapToSpeak}
+                >
+                  <Feather name="mic" size={24} color="#fff" />
+                </Pressable>
+
+                <View style={[styles.inputPill, isRtl && styles.rowReverse]}>
                   <Pressable
-                    onPress={toggleRecording}
-                    disabled={busy && !recorderState.isRecording}
-                    android_ripple={{ color: recorderState.isRecording ? 'rgba(255,255,255,0.25)' : 'rgba(224,162,74,0.25)' }}
+                    onPress={() => navigation.navigate('ScanCard')}
+                    disabled={busy}
+                    android_ripple={{ color: 'rgba(14,124,102,0.1)', borderless: true }}
+                    style={({ pressed }) => [styles.scanBtn, pressed && { opacity: 0.6 }]}
+                    accessibilityRole="button"
+                    accessibilityLabel={strings.scanCard}
+                  >
+                    <Feather name="camera" size={20} color={tika.inkFaint} />
+                  </Pressable>
+                  <TextInput
+                    mode="flat"
+                    dense
+                    multiline
+                    value={input}
+                    onChangeText={setInput}
+                    placeholder={strings.placeholder}
+                    placeholderTextColor={tika.inkFaint}
+                    style={styles.input}
+                    contentStyle={[styles.inputContent, isRtl ? styles.rtl : null]}
+                    underlineStyle={{ display: 'none' }}
+                    editable={!busy}
+                    cursorColor={tika.teal}
+                  />
+                  <Pressable
+                    onPress={() => sendTextMessage()}
+                    disabled={busy || !hasInput}
+                    android_ripple={{ color: 'rgba(255,255,255,0.25)' }}
                     style={({ pressed }) => [
-                      styles.micBtn,
-                      recorderState.isRecording && styles.micBtnActive,
-                      pressed && { opacity: 0.9 },
+                      styles.sendBtn,
+                      (!hasInput || busy) && styles.sendBtnIdle,
+                      pressed && { opacity: 0.85 },
                     ]}
                     accessibilityRole="button"
-                    accessibilityLabel={recorderState.isRecording ? 'Stop recording and send' : 'Record voice message'}
+                    accessibilityLabel="Send message"
                   >
-                    <Text style={styles.micBtnIcon}>
-                      {recorderState.isRecording ? '⬛' : '🎤'}
-                    </Text>
+                    <Feather
+                      name="send"
+                      size={17}
+                      color={hasInput && !busy ? '#fff' : tika.inkFaint}
+                      style={isRtl ? styles.flipX : undefined}
+                    />
                   </Pressable>
-                </Animated.View>
-              )}
-            </View>
-            {/* Voice recording hint with better visual feedback */}
-            <View style={styles.composerHintRow}>
-              {recorderState.isRecording ? (
-                <>
-                  <View style={styles.recordingIndicator} />
-                  <Text style={styles.composerHintRecording}>{strings.micHintStop}</Text>
-                </>
-              ) : (
-                <Text style={styles.composerHint}>{strings.micHint}</Text>
-              )}
-            </View>
+                </View>
+              </View>
+            )}
           </View>
         </KeyboardAvoidingView>
       )}
@@ -1285,348 +1508,349 @@ export default function ChatScreen({ route, navigation }: Props) {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  container: { flex: 1 },
+  container: { flex: 1, backgroundColor: tika.bg },
   rtl: { writingDirection: 'rtl', textAlign: 'right' },
+  rtlCenterless: { writingDirection: 'rtl' },
+  rowReverse: { flexDirection: 'row-reverse' },
+  flipX: { transform: [{ scaleX: -1 }] },
   loading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
-  // Header - clean and simple
+  // Header — white with hairline shadow (mockup chat header)
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: tika.card,
     paddingTop: Platform.OS === 'ios' ? 56 : (StatusBar.currentHeight ?? 0) + 12,
-    paddingBottom: 18,
-    paddingHorizontal: 16,
+    paddingBottom: 12,
+    paddingHorizontal: 14,
+    shadowColor: tika.shadow,
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
+    zIndex: 2,
   },
-  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   headerIconBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(244,238,227,0.12)',
+    backgroundColor: tika.mint,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  headerCenter: { flex: 1, alignItems: 'flex-start', paddingLeft: 4 },
-  headerBrand: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  headerBrandText: {
-    color: brand.cream,
-    fontSize: 18,
-    fontWeight: '700',
-    letterSpacing: 0.3,
+  headerIconBtnMuted: {
+    backgroundColor: 'rgba(229,103,75,0.12)',
   },
-  headerMuteBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(244,238,227,0.12)',
-    justifyContent: 'center',
-    alignItems: 'center',
+  headerTitleCol: { justifyContent: 'center', flexShrink: 1 },
+  headerTitle: {
+    color: tika.ink,
+    fontSize: 17,
+    fontWeight: '800',
   },
-  headerMuteBtnActive: {
-    backgroundColor: 'rgba(179,38,30,0.3)',
-  },
-  headerMuteIcon: {
-    fontSize: 20,
-  },
+  headerTagRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 1 },
+  onlineDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: tika.tealBright },
+  headerTag: { color: tika.teal, fontSize: 12, fontWeight: '700' },
+  headerSpacer: { flex: 1 },
 
-  // List - improved padding
-  list: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 20 },
-  listEmpty: { flex: 1, justifyContent: 'center', paddingHorizontal: 28, paddingBottom: 40 },
+  // List
+  list: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 20 },
+  listEmpty: { flexGrow: 1, paddingHorizontal: 20, paddingTop: 20, paddingBottom: 12 },
 
-  // Empty state - cleaner visual hierarchy
-  emptyChat: { alignItems: 'center', gap: 12 },
-  emptyMarkRing: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: '#FFFFFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: brand.ink,
-    shadowOpacity: 0.08,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 4,
-    marginBottom: 8,
+  // Date chip (mockup "Today")
+  dateChipWrap: {
+    alignSelf: 'center',
+    backgroundColor: 'rgba(11,36,64,0.05)',
+    borderRadius: 999,
+    paddingVertical: 5,
+    paddingHorizontal: 14,
+    marginBottom: 12,
   },
-  eyebrow: {
-    color: brand.amber,
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 2,
+  dateChipText: { fontSize: 12, fontWeight: '700', color: 'rgba(11,36,64,0.45)' },
+
+  // Home (empty state) — the mockup Home screen
+  home: { flex: 1 },
+  homeGreeting: { marginTop: 8 },
+  homeHeadline: {
+    color: tika.ink,
+    fontSize: 26,
+    fontWeight: '800',
+    lineHeight: 34,
+    letterSpacing: -0.3,
+  },
+  homeHint: {
+    color: tika.inkSoft,
+    fontSize: 15,
     marginTop: 6,
+    lineHeight: 22,
   },
-  emptyHeadline: {
-    color: brand.ink,
-    fontSize: 24,
-    fontWeight: '700',
-    textAlign: 'center',
-    lineHeight: 30,
-    marginTop: 2,
-  },
-  emptyHint: {
-    color: brand.indigoSoft,
-    fontSize: 16,
-    lineHeight: 24,
-    textAlign: 'center',
-    maxWidth: 300,
-  },
-  voicePromptContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginTop: 16,
-    backgroundColor: 'rgba(224,162,74,0.12)',
-    paddingVertical: 12,
-    paddingHorizontal: 18,
-    borderRadius: 24,
-  },
-  voicePromptIcon: {
-    fontSize: 18,
-  },
-  voicePromptText: {
-    color: brand.ink,
-    fontSize: 14,
-    fontWeight: '500',
-    flex: 1,
-  },
-  suggestionsLabel: {
-    color: brand.indigoSoft,
-    fontSize: 13,
-    fontWeight: '600',
-    letterSpacing: 0.5,
-    marginTop: 24,
-    marginBottom: 4,
-    alignSelf: 'flex-start',
-  },
-  suggestions: { gap: 10, marginTop: 8, alignSelf: 'stretch' },
-  suggestionCard: {
+  quickCards: { gap: 12, marginTop: 22 },
+  quickCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
-    paddingVertical: 18,
-    paddingHorizontal: 16,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    shadowColor: brand.ink,
+    backgroundColor: tika.card,
+    borderRadius: 20,
+    paddingVertical: 15,
+    paddingHorizontal: 18,
+    minHeight: 48,
+    shadowColor: tika.shadow,
     shadowOpacity: 0.06,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 3,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
-  suggestionNumber: {
-    width: 28,
-    height: 28,
+  quickCardIcon: {
+    width: 44,
+    height: 44,
     borderRadius: 14,
-    justifyContent: 'center',
+    backgroundColor: tika.mint,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  suggestionNumberText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  suggestionText: { flex: 1, color: brand.ink, fontSize: 16, lineHeight: 22 },
-  suggestionArrow: {
-    color: brand.amber,
-    fontSize: 18,
-    fontWeight: '600',
-  },
-
-  // Quick Replies - more refined
-  quickReplies: {
+  quickCardText: { flex: 1, fontSize: 16, fontWeight: '700', color: tika.ink, lineHeight: 22 },
+  scanPill: {
+    alignSelf: 'center',
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    alignItems: 'center',
     gap: 10,
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 6,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: 'rgba(14,124,102,0.4)',
+    borderRadius: 999,
+    paddingVertical: 11,
+    paddingHorizontal: 20,
+    minHeight: 48,
+    marginTop: 18,
   },
-  quickReplyChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    shadowColor: brand.ink,
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+  scanPillText: { fontSize: 14, fontWeight: '700', color: tika.teal },
+  homeMicWrap: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', gap: 8, paddingBottom: 8, minHeight: 120 },
+  homeMic: {
+    width: 78,
+    height: 78,
+    borderRadius: 39,
+    backgroundColor: tika.amber,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: tika.amber,
+    shadowOpacity: 0.4,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 6,
   },
-  quickReplyText: {
-    color: brand.indigo,
-    fontSize: 14,
-    fontWeight: '600',
-  },
+  homeMicLabel: { fontSize: 13, fontWeight: '700', color: 'rgba(11,36,64,0.55)' },
 
-  // Bubbles - better shadows and spacing
-  row: { marginVertical: 6, flexDirection: 'row', alignItems: 'flex-end', gap: 10 },
-  rowLeft: { justifyContent: 'flex-start' },
-  rowRight: { justifyContent: 'flex-end' },
-  botAvatar: {
-    width: 32, height: 32, borderRadius: 16,
-    backgroundColor: '#FFFFFF',
-    justifyContent: 'center', alignItems: 'center',
-    shadowColor: brand.ink,
-    shadowOpacity: 0.08,
+  // Bubbles (mockup radii: sharp corner on the tail side)
+  row: { marginBottom: 14, maxWidth: '100%' },
+  rowRight: { alignItems: 'flex-end' },
+  rowLeft: { alignItems: 'flex-start' },
+  bubbleWrapper: { maxWidth: '85%' },
+  bubble: {
+    borderRadius: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  tailBottomRight: { borderBottomRightRadius: 6 },
+  tailBottomLeft: { borderBottomLeftRadius: 6 },
+  bubbleUser: {
+    backgroundColor: palette.userBubble,
+    shadowColor: tika.teal,
+    shadowOpacity: 0.2,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 2 },
     elevation: 2,
-  },
-  bubble: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 20,
-  },
-  bubbleUser: {
-    backgroundColor: brand.ink,
-    borderBottomRightRadius: 6,
-    shadowColor: brand.ink,
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 3,
   },
   bubbleBot: {
-    backgroundColor: '#FFFFFF',
-    borderBottomLeftRadius: 6,
-    shadowColor: brand.ink,
+    backgroundColor: palette.botBubble,
+    shadowColor: tika.shadow,
     shadowOpacity: 0.06,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 2 },
     elevation: 2,
   },
-  bubbleText: { fontSize: 16, lineHeight: 24 },
-  pendingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6 },
-  statusText: { color: '#5E6E84', fontSize: 13, flexShrink: 1, fontStyle: 'italic' },
-  bubbleWrapper: { maxWidth: '82%' },
-  bubbleWrapperUser: { alignItems: 'flex-end' },
-  bubbleRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
-  bubbleRowUser: { flexDirection: 'row-reverse' },
-  playBtnInline: {
+  bubbleText: { fontSize: 15.5, lineHeight: 23 },
+  userContent: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  voiceBadge: { marginTop: 4 },
+
+  // Status pill (mockup's "finding your nearest site…" pill)
+  statusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: tika.card,
+    borderRadius: 999,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    shadowColor: tika.shadow,
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  statusText: { fontSize: 13, fontWeight: '700', color: 'rgba(11,36,64,0.55)', maxWidth: 240 },
+
+  // Under-answer actions: read-aloud pill + icon buttons
+  msgActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+    paddingHorizontal: 2,
+  },
+  readAloudPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    backgroundColor: tika.card,
+    borderRadius: 999,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    minHeight: 36,
+    shadowColor: tika.shadow,
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
+  },
+  readAloudText: { fontSize: 12.5, fontWeight: '800', color: tika.teal },
+  actionBtn: {
     width: 34,
     height: 34,
     borderRadius: 17,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 3,
-  },
-  playBtnBot: {
-    backgroundColor: 'rgba(7,32,63,0.06)',
-  },
-  playBtnUser: {
-    backgroundColor: 'rgba(244,238,227,0.18)',
-  },
-
-  // Message actions (feedback + bookmark) - better alignment
-  msgActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 6,
-    marginLeft: 42, // align with bubble (play button width + gap)
-  },
-  actionBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(7,32,63,0.04)',
   },
   actionBtnActive: {
-    backgroundColor: 'rgba(7,32,63,0.1)',
+    backgroundColor: tika.mint,
   },
 
-  // Composer - elevated and polished
-  composerWrap: {
-    paddingHorizontal: 16,
-    paddingBottom: Platform.OS === 'ios' ? 28 : 16,
-    paddingTop: 12,
-    backgroundColor: 'transparent',
+  // Quick replies (follow-up chips)
+  quickReplies: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    paddingTop: 2,
+    paddingBottom: 8,
   },
-  composer: {
+  quickReplyChip: {
+    backgroundColor: tika.mint,
+    borderRadius: 999,
+    paddingVertical: 9,
+    paddingHorizontal: 16,
+    minHeight: 38,
+    justifyContent: 'center',
+  },
+  quickReplyText: { fontSize: 13.5, fontWeight: '700', color: tika.teal },
+
+  // Composer (mockup bottom bar)
+  composerWrap: {
+    backgroundColor: tika.card,
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: Platform.OS === 'ios' ? 26 : 14,
+    shadowColor: tika.shadow,
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: -1 },
+    elevation: 8,
+  },
+  composer: { flexDirection: 'row', alignItems: 'flex-end', gap: 10 },
+  micBtn: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: tika.amber,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: tika.amber,
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 4,
+  },
+  inputPill: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'flex-end',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 28,
-    paddingLeft: 8,
-    paddingRight: 8,
-    paddingVertical: 8,
-    gap: 8,
-    shadowColor: brand.ink,
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 4,
+    backgroundColor: tika.inputPill,
+    borderRadius: 27,
+    paddingLeft: 6,
+    paddingRight: 7,
+    paddingVertical: 7,
+    minHeight: 54,
+  },
+  scanBtn: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   input: {
     flex: 1,
-    maxHeight: 120,
     backgroundColor: 'transparent',
-    fontSize: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    maxHeight: 120,
+    fontSize: 15,
   },
-  inputContent: { color: brand.ink },
-
-  scanBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(20,60,108,0.08)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-
-  micBtn: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: 'rgba(224,162,74,0.18)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2.5,
-    borderColor: brand.amber,
-  },
-  micBtnActive: {
-    backgroundColor: '#B3261E',
-    borderColor: '#B3261E',
-  },
-  micBtnIcon: {
-    fontSize: 24,
+  inputContent: {
+    paddingTop: 8,
+    paddingBottom: 8,
+    paddingHorizontal: 4,
+    color: tika.ink,
   },
   sendBtn: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: brand.ink,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: tika.teal,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  sendBtnIdle: {
+    backgroundColor: 'rgba(11,36,64,0.06)',
   },
 
-  composerHintRow: {
+  // WhatsApp-style recording bar
+  recCancelBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  recordingBar: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    marginTop: 10,
+    gap: 10,
+    backgroundColor: tika.inputPill,
+    borderRadius: 27,
+    paddingHorizontal: 16,
+    minHeight: 54,
   },
-  composerHint: {
-    color: brand.indigoSoft,
-    fontSize: 13,
-    fontWeight: '500',
-    textAlign: 'center',
-  },
-  composerHintRecording: {
-    color: '#B3261E',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  recordingIndicator: {
+  recDot: {
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: '#B3261E',
+    backgroundColor: tika.coral,
+  },
+  recTimer: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: tika.ink,
+    fontVariant: ['tabular-nums'],
+    minWidth: 42,
+  },
+  recSendBtn: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: tika.teal,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: tika.teal,
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
   },
 });
