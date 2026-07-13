@@ -1210,12 +1210,14 @@ export default function ChatScreen({ route, navigation }: Props) {
   const LOCK_DISTANCE = 70;
   const CANCEL_DISTANCE = 90;
 
+  // Snap the mic back instantly (like WhatsApp). A spring here proved
+  // unreliable: the values are native-driven and shared by the hero + composer
+  // mics, and an in-flight spring can be dropped when one of them unmounts
+  // (message sent → empty state gone), leaving the mic big and displaced.
   const resetMicAnim = useCallback(() => {
-    Animated.parallel([
-      Animated.spring(micScale, { toValue: 1, useNativeDriver: true }),
-      Animated.spring(micShiftX, { toValue: 0, useNativeDriver: true }),
-      Animated.spring(micShiftY, { toValue: 0, useNativeDriver: true }),
-    ]).start();
+    micScale.stopAnimation(() => micScale.setValue(1));
+    micShiftX.stopAnimation(() => micShiftX.setValue(0));
+    micShiftY.stopAnimation(() => micShiftY.setValue(0));
   }, [micScale, micShiftX, micShiftY]);
 
   // The PanResponder is created once, so it reaches the latest state through
@@ -1285,6 +1287,13 @@ export default function ChatScreen({ route, navigation }: Props) {
       onPanResponderTerminationRequest: () => false,
     }),
   ).current;
+
+  // Belt-and-suspenders: whatever path leads back to idle (send, cancel,
+  // too-short tap, lock-bar buttons, mic error), the mic MUST end at its
+  // resting size and position.
+  useEffect(() => {
+    if (recMode === 'idle') resetMicAnim();
+  }, [recMode, resetMicAnim]);
 
   // Gentle bounce on the lock hint's chevron while holding.
   useEffect(() => {
