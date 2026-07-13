@@ -6,6 +6,7 @@ import {
   Easing,
   FlatList,
   Linking,
+  PanResponder,
   Platform,
   Pressable,
   Share,
@@ -114,6 +115,8 @@ type Strings = {
   quickReplies: string[];
   scanCard: string;
   tapToSpeak: string;
+  slideToCancel: string;
+  holdToRecord: string;
   readAloud: string;
   directions: string;
   placeholder: string;
@@ -149,7 +152,9 @@ const COPY: Record<ReplyLanguage, Strings> = {
       'When should this be given?',
     ],
     scanCard: 'Scan vaccination card',
-    tapToSpeak: 'Tap to speak',
+    tapToSpeak: 'Hold to speak',
+    slideToCancel: 'Slide to cancel',
+    holdToRecord: 'Hold to record, release to send',
     readAloud: 'Read aloud',
     directions: 'Directions',
     placeholder: 'Type your question…',
@@ -183,7 +188,9 @@ const COPY: Record<ReplyLanguage, Strings> = {
       'یہ کب دینی چاہیے؟',
     ],
     scanCard: 'ٹیکہ کارڈ اسکین کریں',
-    tapToSpeak: 'بولنے کے لیے دبائیں',
+    tapToSpeak: 'بولنے کے لیے دبائے رکھیں',
+    slideToCancel: 'منسوخ کے لیے سلائیڈ کریں',
+    holdToRecord: 'ریکارڈ کے لیے دبائے رکھیں، بھیجنے کے لیے چھوڑیں',
     readAloud: 'سنیں',
     directions: 'راستہ دیکھیں',
     placeholder: 'اپنا سوال لکھیں…',
@@ -217,7 +224,9 @@ const COPY: Record<ReplyLanguage, Strings> = {
       'چه زمانی باید داده شود؟',
     ],
     scanCard: 'کارت واکسیناسیون را اسکن کنید',
-    tapToSpeak: 'برای صحبت لمس کنید',
+    tapToSpeak: 'برای صحبت نگه دارید',
+    slideToCancel: 'برای لغو بکشید',
+    holdToRecord: 'برای ضبط نگه دارید، برای ارسال رها کنید',
     readAloud: 'بشنوید',
     directions: 'مسیر',
     placeholder: 'سوال خود را بنویسید…',
@@ -251,7 +260,9 @@ const COPY: Record<ReplyLanguage, Strings> = {
       'دا کله باید ورکړل شي؟',
     ],
     scanCard: 'د واکسین کارت سکین کړئ',
-    tapToSpeak: 'د خبرو لپاره کېکاږئ',
+    tapToSpeak: 'د خبرو لپاره کېکاږلی وساتئ',
+    slideToCancel: 'د لغوه لپاره وښویوئ',
+    holdToRecord: 'د ثبت لپاره کېکاږلی وساتئ، د لېږلو لپاره پرېږدئ',
     readAloud: 'واورئ',
     directions: 'لار وګورئ',
     placeholder: 'خپله پوښتنه ولیکئ…',
@@ -285,7 +296,9 @@ const COPY: Record<ReplyLanguage, Strings> = {
       'هي ڪڏهن ڏني وڃي؟',
     ],
     scanCard: 'ويڪسين ڪارڊ اسڪين ڪريو',
-    tapToSpeak: 'ڳالهائڻ لاءِ دٻايو',
+    tapToSpeak: 'ڳالهائڻ لاءِ دٻائي رکو',
+    slideToCancel: 'منسوخ لاءِ سلائيڊ ڪريو',
+    holdToRecord: 'رڪارڊ لاءِ دٻائي رکو، موڪلڻ لاءِ ڇڏيو',
     readAloud: 'ٻڌو',
     directions: 'رستو ڏسو',
     placeholder: 'پنهنجو سوال لکو…',
@@ -719,6 +732,11 @@ export default function ChatScreen({ route, navigation }: Props) {
   const [copied, setCopied] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(paramChatId !== null);
   const [muted, setMuted] = useState(false);
+  // WhatsApp-style recording gesture: 'held' while the finger is down on the
+  // mic (release = send, slide sideways = cancel, slide up = lock), 'locked'
+  // once locked (hands-free until trash/send is tapped).
+  const [recMode, setRecMode] = useState<'idle' | 'held' | 'locked'>('idle');
+  const [hint, setHint] = useState<string | null>(null);
 
   const listRef = useRef<FlatList<Msg>>(null);
   const messagesRef = useRef<Msg[]>([]);
@@ -735,6 +753,24 @@ export default function ChatScreen({ route, navigation }: Props) {
   // without a server voice fall back to the on-device engine.
   const ttsPlayer = useAudioPlayer(null);
   const recordingPulse = useRef(new Animated.Value(1)).current;
+
+  // Push-to-talk gesture plumbing. The PanResponder is created once, so it
+  // reaches the LATEST handlers through a ref (a directly captured callback
+  // would be frozen at first render with stale state).
+  const recStartAtRef = useRef(0);
+  const lockedRef = useRef(false);
+  const cancelledRef = useRef(false);
+  const holdHandlersRef = useRef<{
+    canStart: () => boolean;
+    start: () => void;
+    move: (dx: number, dy: number) => void;
+    release: () => void;
+    terminate: () => void;
+  }>({ canStart: () => false, start: () => {}, move: () => {}, release: () => {}, terminate: () => {} });
+  const micScale = useRef(new Animated.Value(1)).current;
+  const micShiftX = useRef(new Animated.Value(0)).current;
+  const micShiftY = useRef(new Animated.Value(0)).current;
+  const lockHintY = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -1092,29 +1128,35 @@ export default function ChatScreen({ route, navigation }: Props) {
   );
 
   const startRecording = useCallback(async () => {
-    if (!deviceId || busy || recorderState.isRecording) return;
+    // recorder.isRecording is the LIVE recorder flag (recorderState polls and
+    // can lag by an interval — too stale for gesture races).
+    if (!deviceId || busy || recorder.isRecording) return;
     setError(null);
     stopSpeaking();
     try {
       // Re-enable the recording session (playback may have switched it off).
       await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
       await recorder.prepareToRecordAsync();
+      // The finger may have lifted or slid to cancel while prepare was in
+      // flight — starting now would leave a headless recording running.
+      if (cancelledRef.current) return;
       recorder.record();
     } catch (e: any) {
+      setRecMode('idle');
       setError(e?.message ?? strings.errorMic);
     }
-  }, [busy, deviceId, recorder, recorderState.isRecording, stopSpeaking, strings.errorMic]);
+  }, [busy, deviceId, recorder, stopSpeaking, strings.errorMic]);
 
   /** WhatsApp-style cancel: stop the recorder and throw the clip away. */
   const cancelRecording = useCallback(async () => {
-    if (!recorderState.isRecording) return;
+    if (!recorder.isRecording) return;
     try {
       await recorder.stop();
     } catch {}
-  }, [recorder, recorderState.isRecording]);
+  }, [recorder]);
 
   const stopRecordingAndSend = useCallback(async () => {
-    if (!deviceId || !recorderState.isRecording) return;
+    if (!deviceId || !recorder.isRecording) return;
     setBusy(true);
     setError(null);
     setRetryText(null);
@@ -1160,7 +1202,105 @@ export default function ChatScreen({ route, navigation }: Props) {
       setBusy(false);
       scroll();
     }
-  }, [chatId, chatTitle, deviceId, language, persistSession, recorder, recorderState.isRecording, revealWithAudio, scroll, strings.errorNoAudio, strings.errorVoice, strings.voicePlaceholder, strings.voiceTranscriptFallback]);
+  }, [chatId, chatTitle, deviceId, language, persistSession, recorder, revealWithAudio, scroll, strings.errorNoAudio, strings.errorVoice, strings.voicePlaceholder, strings.voiceTranscriptFallback]);
+
+  // ── WhatsApp push-to-talk gesture ─────────────────────────────────────────
+  // Hold the mic to record; release to send; slide sideways to cancel; slide
+  // up to lock (hands-free — then the locked bar's trash/send buttons apply).
+  const LOCK_DISTANCE = 70;
+  const CANCEL_DISTANCE = 90;
+
+  const resetMicAnim = useCallback(() => {
+    Animated.parallel([
+      Animated.spring(micScale, { toValue: 1, useNativeDriver: true }),
+      Animated.spring(micShiftX, { toValue: 0, useNativeDriver: true }),
+      Animated.spring(micShiftY, { toValue: 0, useNativeDriver: true }),
+    ]).start();
+  }, [micScale, micShiftX, micShiftY]);
+
+  // The PanResponder is created once, so it reaches the latest state through
+  // this ref — refreshed every render.
+  useEffect(() => {
+    holdHandlersRef.current = {
+      canStart: () => !!deviceId && !busy && !recorder.isRecording,
+      start: () => {
+        lockedRef.current = false;
+        cancelledRef.current = false;
+        recStartAtRef.current = Date.now();
+        setRecMode('held');
+        Animated.spring(micScale, { toValue: 1.45, useNativeDriver: true }).start();
+        startRecording();
+      },
+      move: (dx, dy) => {
+        if (lockedRef.current || cancelledRef.current) return;
+        // Cancel is an inward slide: left in LTR, right in RTL.
+        const cancelDist = isRtl ? Math.max(0, dx) : Math.max(0, -dx);
+        micShiftX.setValue(isRtl ? Math.max(0, dx) : Math.min(0, dx));
+        micShiftY.setValue(Math.min(0, Math.max(-LOCK_DISTANCE, dy)));
+        if (dy < -LOCK_DISTANCE) {
+          lockedRef.current = true;
+          setRecMode('locked');
+          resetMicAnim();
+        } else if (cancelDist > CANCEL_DISTANCE) {
+          cancelledRef.current = true;
+          setRecMode('idle');
+          resetMicAnim();
+          cancelRecording();
+        }
+      },
+      release: () => {
+        if (lockedRef.current || cancelledRef.current) return;
+        resetMicAnim();
+        setRecMode('idle');
+        const heldMs = Date.now() - recStartAtRef.current;
+        if (heldMs < 700 || !recorder.isRecording) {
+          // Too quick — WhatsApp shows a hint instead of sending a blip.
+          cancelledRef.current = true;
+          cancelRecording();
+          setHint(strings.holdToRecord);
+        } else {
+          stopRecordingAndSend();
+        }
+      },
+      terminate: () => {
+        if (lockedRef.current) return;
+        resetMicAnim();
+        if (!cancelledRef.current) {
+          cancelledRef.current = true;
+          setRecMode('idle');
+          cancelRecording();
+        }
+      },
+    };
+  });
+
+  const micPan = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => holdHandlersRef.current.canStart(),
+      onMoveShouldSetPanResponder: () => false,
+      onPanResponderGrant: () => holdHandlersRef.current.start(),
+      onPanResponderMove: (_e, g) => holdHandlersRef.current.move(g.dx, g.dy),
+      onPanResponderRelease: () => holdHandlersRef.current.release(),
+      onPanResponderTerminate: () => holdHandlersRef.current.terminate(),
+      onPanResponderTerminationRequest: () => false,
+    }),
+  ).current;
+
+  // Gentle bounce on the lock hint's chevron while holding.
+  useEffect(() => {
+    if (recMode !== 'held') {
+      lockHintY.setValue(0);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(lockHintY, { toValue: -5, duration: 450, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(lockHintY, { toValue: 0, duration: 450, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [recMode, lockHintY]);
 
   const renderItem = useCallback(
     ({ item }: { item: Msg }) => (
@@ -1227,24 +1367,26 @@ export default function ChatScreen({ route, navigation }: Props) {
         </Pressable>
 
         <View style={styles.homeMicWrap}>
-          <Pressable
-            onPress={startRecording}
-            android_ripple={{ color: 'rgba(255,255,255,0.25)', borderless: true, radius: 44 }}
-            style={({ pressed }) => [styles.homeMic, pressed && { transform: [{ scale: 0.97 }] }]}
-            accessibilityRole="button"
-            accessibilityLabel={strings.tapToSpeak}
-          >
-            <Feather name="mic" size={32} color="#fff" />
-          </Pressable>
+          {/* Push-to-talk, same gesture as the composer mic: hold to record,
+              release to send, slide sideways to cancel, slide up to lock. */}
+          <Animated.View {...micPan.panHandlers} style={{ transform: [{ scale: micScale }] }}>
+            <View
+              style={styles.homeMic}
+              accessible
+              accessibilityRole="button"
+              accessibilityLabel={strings.tapToSpeak}
+            >
+              <Feather name="mic" size={32} color="#fff" />
+            </View>
+          </Animated.View>
           <Text style={styles.homeMicLabel}>{strings.tapToSpeak}</Text>
         </View>
       </View>
     ),
-    [isRtl, navigation, sendTextMessage, startRecording, strings.greeting, strings.greetingHint, strings.scanCard, strings.suggestions, strings.tapToSpeak],
+    [isRtl, micPan.panHandlers, micScale, navigation, sendTextMessage, strings.greeting, strings.greetingHint, strings.scanCard, strings.suggestions, strings.tapToSpeak],
   );
 
   const hasInput = input.trim().length > 0;
-  const isRecording = recorderState.isRecording;
 
   // Normalized 0..1 mic level for the recording wave (metering is dBFS ≤ 0).
   const meterLevel = useMemo(() => {
@@ -1382,13 +1524,29 @@ export default function ChatScreen({ route, navigation }: Props) {
             windowSize={11}
           />
 
-          {/* Composer — amber mic + input pill; morphs into the WhatsApp-style
-              recording bar (timer + live wave + cancel/send) while recording. */}
+          {/* Composer — WhatsApp push-to-talk: hold the amber mic to record
+              (release = send, slide sideways = cancel, slide up = lock). The
+              locked mode shows the trash/timer/wave/send bar. */}
           <View style={styles.composerWrap}>
-            {isRecording ? (
+            {/* Floating lock hint above the mic while the finger is down */}
+            {recMode === 'held' && (
+              <View style={[styles.lockPillWrap, isRtl ? styles.lockPillRtl : styles.lockPillLtr]} pointerEvents="none">
+                <View style={styles.lockPill}>
+                  <Feather name="lock" size={16} color={tika.teal} />
+                  <Animated.View style={{ transform: [{ translateY: lockHintY }] }}>
+                    <Feather name="chevron-up" size={18} color={tika.inkFaint} />
+                  </Animated.View>
+                </View>
+              </View>
+            )}
+
+            {recMode === 'locked' ? (
               <View style={[styles.composer, isRtl && styles.rowReverse]}>
                 <Pressable
-                  onPress={cancelRecording}
+                  onPress={() => {
+                    setRecMode('idle');
+                    cancelRecording();
+                  }}
                   android_ripple={{ color: 'rgba(229,103,75,0.15)', borderless: true }}
                   style={styles.recCancelBtn}
                   accessibilityRole="button"
@@ -1402,7 +1560,10 @@ export default function ChatScreen({ route, navigation }: Props) {
                   <RecordingWave level={meterLevel} />
                 </View>
                 <Pressable
-                  onPress={stopRecordingAndSend}
+                  onPress={() => {
+                    setRecMode('idle');
+                    stopRecordingAndSend();
+                  }}
                   android_ripple={{ color: 'rgba(255,255,255,0.25)' }}
                   style={({ pressed }) => [styles.recSendBtn, pressed && { opacity: 0.9 }]}
                   accessibilityRole="button"
@@ -1413,16 +1574,46 @@ export default function ChatScreen({ route, navigation }: Props) {
               </View>
             ) : (
               <View style={[styles.composer, isRtl && styles.rowReverse]}>
-                <Pressable
-                  onPress={startRecording}
-                  disabled={busy}
-                  android_ripple={{ color: 'rgba(255,255,255,0.25)', borderless: true, radius: 30 }}
-                  style={({ pressed }) => [styles.micBtn, busy && { opacity: 0.5 }, pressed && { transform: [{ scale: 0.96 }] }]}
-                  accessibilityRole="button"
-                  accessibilityLabel={strings.tapToSpeak}
+                {/* ONE persistent mic view for idle AND held: unmounting the
+                    view that captured the pan gesture would fire
+                    onPanResponderTerminate and cancel the recording mid-hold.
+                    It follows the finger (slide to cancel / lift to lock). */}
+                <Animated.View
+                  {...micPan.panHandlers}
+                  style={{
+                    transform: [{ translateX: micShiftX }, { translateY: micShiftY }, { scale: micScale }],
+                    zIndex: 2,
+                  }}
                 >
-                  <Feather name="mic" size={24} color="#fff" />
-                </Pressable>
+                  <View
+                    style={[styles.micBtn, busy && recMode === 'idle' && { opacity: 0.5 }]}
+                    accessible
+                    accessibilityRole="button"
+                    accessibilityLabel={strings.tapToSpeak}
+                  >
+                    <Feather name="mic" size={24} color="#fff" />
+                  </View>
+                </Animated.View>
+
+                {recMode === 'held' ? (
+                  <View style={[styles.heldBar, isRtl && styles.rowReverse]}>
+                    <Animated.View style={{ opacity: recordingPulse }}>
+                      <Feather name="mic" size={20} color={tika.coral} />
+                    </Animated.View>
+                    <Text style={styles.recTimer}>{recTimer}</Text>
+                    <View style={styles.flex} />
+                    <Animated.View
+                      style={[
+                        styles.slideHint,
+                        isRtl && styles.rowReverse,
+                        { transform: [{ translateX: micShiftX }] },
+                      ]}
+                    >
+                      <Feather name={isRtl ? 'chevron-right' : 'chevron-left'} size={16} color={tika.inkFaint} />
+                      <Text style={styles.slideHintText}>{strings.slideToCancel}</Text>
+                    </Animated.View>
+                  </View>
+                ) : (
 
                 <View style={[styles.inputPill, isRtl && styles.rowReverse]}>
                   <Pressable
@@ -1469,6 +1660,7 @@ export default function ChatScreen({ route, navigation }: Props) {
                     />
                   </Pressable>
                 </View>
+                )}
               </View>
             )}
           </View>
@@ -1501,6 +1693,11 @@ export default function ChatScreen({ route, navigation }: Props) {
 
       <Snackbar visible={copied} onDismiss={() => setCopied(false)} duration={1400}>
         {strings.copied}
+      </Snackbar>
+
+      {/* WhatsApp-style "hold to record" toast after a too-short tap */}
+      <Snackbar visible={!!hint} onDismiss={() => setHint(null)} duration={1600}>
+        {hint ?? ''}
       </Snackbar>
     </View>
   );
@@ -1808,6 +2005,46 @@ const styles = StyleSheet.create({
   sendBtnIdle: {
     backgroundColor: 'rgba(11,36,64,0.06)',
   },
+
+  // WhatsApp push-to-talk: floating lock hint above the mic while holding
+  lockPillWrap: {
+    position: 'absolute',
+    top: -78,
+    zIndex: 5,
+  },
+  lockPillLtr: { left: 18 },
+  lockPillRtl: { right: 18 },
+  lockPill: {
+    width: 46,
+    borderRadius: 23,
+    backgroundColor: tika.card,
+    alignItems: 'center',
+    paddingVertical: 12,
+    gap: 6,
+    shadowColor: tika.shadow,
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 5,
+  },
+
+  // Held (finger-down) bar: red mic + timer + "slide to cancel"
+  heldBar: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: tika.inputPill,
+    borderRadius: 27,
+    paddingHorizontal: 16,
+    minHeight: 54,
+  },
+  slideHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  slideHintText: { fontSize: 13.5, fontWeight: '600', color: tika.inkFaint },
 
   // WhatsApp-style recording bar
   recCancelBtn: {
