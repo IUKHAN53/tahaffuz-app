@@ -968,7 +968,9 @@ export default function ChatScreen({ route, navigation }: Props) {
         fetch(url)
           .then((r) => (r.ok ? url : null))
           .catch(() => null),
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
+        // 4s cap (was 8s): if server TTS is slower than this, show the text and
+        // let the on-device voice cover it — answers should never feel stuck.
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000)),
       ]).then(async (ready) => {
         reveal();
         scroll();
@@ -1066,6 +1068,12 @@ export default function ChatScreen({ route, navigation }: Props) {
       };
       setMessages((m) => [...m, userMsg, placeholder]);
       setBusy(true);
+
+      // Refresh the GPS fix when it has gone stale (user traveled since app
+      // start) so "nearest site" answers match where they are NOW. Capped at
+      // 2.5s inside getSessionLocation — never stalls the message.
+      const loc = await getSessionLocation();
+      if (loc) locationRef.current = loc;
 
       const freshTitle = isPlaceholderTitleText(chatTitle) && !chatId;
       if (freshTitle) setChatTitle(text.slice(0, 60));
@@ -1176,6 +1184,10 @@ export default function ChatScreen({ route, navigation }: Props) {
         { id: placeholderId, role: 'assistant', content: '', pending: true, status: statusLabel('searching', language) },
       ]);
       scroll();
+
+      // Same stale-GPS refresh as the text path (see sendTextMessage).
+      const loc = await getSessionLocation();
+      if (loc) locationRef.current = loc;
 
       const res = await sendAudio({ deviceId, audioUri: uri, audioMime: 'audio/m4a', chatId, language, location: locationRef.current });
       setChatId(res.chat_id);
