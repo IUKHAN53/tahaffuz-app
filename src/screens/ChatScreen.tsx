@@ -964,23 +964,47 @@ export default function ChatScreen({ route, navigation }: Props) {
       const ttsLang = ttsLangForText(clean, language);
       const url = ttsUrl(clean, ttsLang, voiceGenderRef.current);
 
-      return Promise.race<string | null>([
-        fetch(url)
-          .then((r) => (r.ok ? url : null))
-          .catch(() => null),
-        // 4s cap (was 8s): if server TTS is slower than this, show the text and
-        // let the on-device voice cover it — answers should never feel stuck.
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000)),
-      ]).then(async (ready) => {
+      const playServer = async (uri: string) => {
+        try {
+          await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+          ttsPlayer.replace({ uri });
+          ttsPlayer.play();
+        } catch {}
+      };
+
+      // 'failed' = the server said no (or network error) → the on-device voice
+      // may cover it. Slow is NOT failed: long answers take >4s to synthesize
+      // the first time, and treating slow as failed played the robotic Android
+      // voice constantly. Text reveals at 4s; the natural voice follows when
+      // ready (up to 15s), and slowness past that just stays silent — the
+      // Read-aloud button re-tries the (by then cached) server audio.
+      const PENDING = Symbol('pending');
+      const ttsPromise: Promise<string | 'failed'> = fetch(url)
+        .then((r) => (r.ok ? url : ('failed' as const)))
+        .catch(() => 'failed' as const);
+
+      return Promise.race<string | 'failed' | typeof PENDING>([
+        ttsPromise,
+        new Promise<typeof PENDING>((resolve) => setTimeout(() => resolve(PENDING), 4000)),
+      ]).then(async (first) => {
         reveal();
         scroll();
-        if (ready) {
-          try {
-            await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
-            ttsPlayer.replace({ uri: ready });
-            ttsPlayer.play();
-          } catch {}
-        } else {
+        if (first === 'failed') {
+          Speech.speak(clean, { language: TTS_LANG[ttsLang], pitch: 1.0, rate: 1.0 });
+          return;
+        }
+        if (typeof first === 'string') {
+          await playServer(first);
+          return;
+        }
+        // Still synthesizing — keep waiting in the background, play when ready.
+        const late = await Promise.race<string | 'failed' | null>([
+          ttsPromise,
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 15000)),
+        ]);
+        if (typeof late === 'string' && late !== 'failed') {
+          await playServer(late);
+        } else if (late === 'failed') {
           Speech.speak(clean, { language: TTS_LANG[ttsLang], pitch: 1.0, rate: 1.0 });
         }
       });
