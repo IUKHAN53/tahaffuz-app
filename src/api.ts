@@ -44,6 +44,9 @@ export type ChatReply = {
     latency_ms: number;
     // Structured sites for location answers (site cards). Absent otherwise.
     sites?: SiteInfo[];
+    // Spoken variant of a site answer — natural sentences with no bullets,
+    // brackets, or links. When present, TTS reads this instead of `content`.
+    speech_text?: string | null;
   };
   transcript?: string;
   // Best-effort gender of the voice-message speaker; drives the reply voice.

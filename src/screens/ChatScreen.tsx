@@ -22,6 +22,7 @@ import {
   TextInput,
 } from 'react-native-paper';
 import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import * as Speech from 'expo-speech';
 import * as Clipboard from 'expo-clipboard';
@@ -77,6 +78,7 @@ type Msg = {
   bookmarked?: boolean;
   voice?: boolean; // User message that came in as a voice recording
   sites?: SiteInfo[]; // Structured vaccination sites (location answers)
+  speech?: string; // Spoken variant (site answers) — TTS reads this, not content
 };
 
 // Backend streams status keys (locating/searching/reading_card) before the
@@ -668,7 +670,7 @@ const MessageBubble = memo(function MessageBubble({
         {!isUser && canPlay && !item.pending && (
           <View style={[styles.msgActions, isRtl && styles.rowReverse]}>
             <Pressable
-              onPress={() => onSpeak(displayContent)}
+              onPress={() => onSpeak(item.speech ?? displayContent)}
               android_ripple={{ color: 'rgba(14,124,102,0.12)' }}
               style={({ pressed }) => [styles.readAloudPill, isRtl && styles.rowReverse, pressed && { opacity: 0.8 }]}
               accessibilityRole="button"
@@ -740,6 +742,9 @@ export default function ChatScreen({ route, navigation }: Props) {
 
   const listRef = useRef<FlatList<Msg>>(null);
   const messagesRef = useRef<Msg[]>([]);
+  // Edge-to-edge Android draws under the system navigation bar; without this
+  // inset the 3-button nav bar sits ON TOP of the composer.
+  const insets = useSafeAreaInsets();
   // Captured once per session; sent with messages so the assistant can answer
   // "where is my nearest site?". Null until granted/fixed (sent omitted then).
   const locationRef = useRef<LatLng | null>(null);
@@ -945,12 +950,13 @@ export default function ChatScreen({ route, navigation }: Props) {
    * on-device voice covers it so nothing stalls.
    */
   const revealWithAudio = useCallback(
-    (placeholderId: string, content: string, serverId?: number, sites?: SiteInfo[]): Promise<void> => {
+    (placeholderId: string, content: string, serverId?: number, sites?: SiteInfo[], speechText?: string | null): Promise<void> => {
+      const speech = speechText?.trim() || undefined;
       const reveal = () =>
         setMessages((m) =>
           m.map((x) =>
             x.id === placeholderId
-              ? { ...x, pending: false, content, serverId, sites: sites?.length ? sites : undefined }
+              ? { ...x, pending: false, content, serverId, sites: sites?.length ? sites : undefined, speech }
               : x,
           ),
         );
@@ -960,7 +966,9 @@ export default function ChatScreen({ route, navigation }: Props) {
         return Promise.resolve();
       }
 
-      const clean = stripMarkdownForSpeech(stripMapsLines(content));
+      // Site answers ship a spoken variant (natural sentences); the display
+      // text — bullets, distances, links — is only read when there isn't one.
+      const clean = stripMarkdownForSpeech(stripMapsLines(speech ?? content));
       const ttsLang = ttsLangForText(clean, language);
       const url = ttsUrl(clean, ttsLang, voiceGenderRef.current);
 
@@ -1125,7 +1133,7 @@ export default function ChatScreen({ route, navigation }: Props) {
         );
         setChatId(res.chat_id);
         persistSession(res.chat_id, titleForCache);
-        await revealWithAudio(placeholderId, res.reply.content, res.reply.id, res.reply.sites);
+        await revealWithAudio(placeholderId, res.reply.content, res.reply.id, res.reply.sites, res.reply.speech_text);
       } catch (streamErr: any) {
         if (sawDelta) {
           setError(streamErr?.message ?? strings.errorNet);
@@ -1136,7 +1144,7 @@ export default function ChatScreen({ route, navigation }: Props) {
             const res = await sendText({ deviceId, message: text, chatId, language, location: locationRef.current });
             setChatId(res.chat_id);
             persistSession(res.chat_id, titleForCache);
-            await revealWithAudio(placeholderId, res.reply.content, res.reply.id, res.reply.sites);
+            await revealWithAudio(placeholderId, res.reply.content, res.reply.id, res.reply.sites, res.reply.speech_text);
           } catch (e: any) {
             // Last resort: answer from the offline quick-answers cache.
             const cached = await getCachedQuickAnswers();
@@ -1168,10 +1176,27 @@ export default function ChatScreen({ route, navigation }: Props) {
     try {
       // Re-enable the recording session (playback may have switched it off).
       await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
-      await recorder.prepareToRecordAsync();
+      try {
+        await recorder.prepareToRecordAsync();
+      } catch {
+        // A previous gesture aborted between prepare and record and left the
+        // recorder in the prepared state ("has already been prepared") —
+        // release it and prepare fresh.
+        try {
+          await recorder.stop();
+        } catch {}
+        await recorder.prepareToRecordAsync();
+      }
       // The finger may have lifted or slid to cancel while prepare was in
-      // flight — starting now would leave a headless recording running.
-      if (cancelledRef.current) return;
+      // flight — starting now would leave a headless recording running. The
+      // prepared session must still be released, or the NEXT hold's prepare
+      // is rejected with "AudioRecorder has already been prepared".
+      if (cancelledRef.current) {
+        try {
+          await recorder.stop();
+        } catch {}
+        return;
+      }
       recorder.record();
     } catch (e: any) {
       setRecMode('idle');
@@ -1179,9 +1204,13 @@ export default function ChatScreen({ route, navigation }: Props) {
     }
   }, [busy, deviceId, recorder, stopSpeaking, strings.errorMic]);
 
-  /** WhatsApp-style cancel: stop the recorder and throw the clip away. */
+  /**
+   * WhatsApp-style cancel: stop the recorder and throw the clip away. Always
+   * attempts stop() — a gesture can abort while the recorder is prepared but
+   * not yet recording, and that prepared state must be released too (stop on
+   * an idle recorder just throws, which we swallow).
+   */
   const cancelRecording = useCallback(async () => {
-    if (!recorder.isRecording) return;
     try {
       await recorder.stop();
     } catch {}
@@ -1230,7 +1259,7 @@ export default function ChatScreen({ route, navigation }: Props) {
         m.map((x) => (x.id === userId ? { ...x, pending: false, content: transcript } : x)),
       );
       persistSession(res.chat_id, freshTitle ? transcript.slice(0, 60) : chatTitle);
-      await revealWithAudio(placeholderId, res.reply.content, res.reply.id, res.reply.sites);
+      await revealWithAudio(placeholderId, res.reply.content, res.reply.id, res.reply.sites, res.reply.speech_text);
     } catch (e: any) {
       setMessages((m) => m.filter((x) => !x.pending));
       setError(e?.message ?? strings.errorVoice);
@@ -1572,7 +1601,13 @@ export default function ChatScreen({ route, navigation }: Props) {
           {/* Composer — WhatsApp push-to-talk: hold the amber mic to record
               (release = send, slide sideways = cancel, slide up = lock). The
               locked mode shows the trash/timer/wave/send bar. */}
-          <View style={styles.composerWrap}>
+          <View
+            style={[
+              styles.composerWrap,
+              // Keep the composer clear of the system nav bar (edge-to-edge).
+              { paddingBottom: Math.max(insets.bottom + 12, Platform.OS === 'ios' ? 26 : 14) },
+            ]}
+          >
             {/* Floating lock hint above the mic while the finger is down */}
             {recMode === 'held' && (
               <View style={[styles.lockPillWrap, isRtl ? styles.lockPillRtl : styles.lockPillLtr]} pointerEvents="none">
